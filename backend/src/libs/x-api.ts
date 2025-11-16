@@ -170,22 +170,34 @@ export class XHelper {
         'tweet.fields': ['created_at', 'public_metrics', 'text'],
       });
 
-      return tweets.data.data?.map(tweet => ({
-        id: tweet.id,
-        text: tweet.text,
-        createdAt: tweet.created_at || '',
-        publicMetrics: tweet.public_metrics ? {
-          retweetCount: tweet.public_metrics.retweet_count,
-          likeCount: tweet.public_metrics.like_count,
-          replyCount: tweet.public_metrics.reply_count,
-          quoteCount: tweet.public_metrics.quote_count,
-        } : {
-          retweetCount: 0,
-          likeCount: 0,
-          replyCount: 0,
-          quoteCount: 0,
-        },
-      })) || [];
+      return tweets.data.data?.map(tweet => {
+        const result: {
+          id: string;
+          text: string;
+          createdAt: string;
+          publicMetrics?: {
+            retweetCount: number;
+            likeCount: number;
+            replyCount: number;
+            quoteCount: number;
+          };
+        } = {
+          id: tweet.id,
+          text: tweet.text,
+          createdAt: tweet.created_at || '',
+        };
+
+        if (tweet.public_metrics) {
+          result.publicMetrics = {
+            retweetCount: tweet.public_metrics.retweet_count,
+            likeCount: tweet.public_metrics.like_count,
+            replyCount: tweet.public_metrics.reply_count,
+            quoteCount: tweet.public_metrics.quote_count,
+          };
+        }
+
+        return result;
+      }) || [];
     } catch (error) {
       console.error('X Get User Tweets Error:', error);
       return [];
@@ -242,19 +254,31 @@ export class XHelper {
       postId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       content: text,
       timestamp: startTime.toISOString(),
-      xPostId: result.tweetId,
-      prompt: metadata.prompt,
+      xPostId: result.tweetId || null,
+      prompt: metadata.prompt || '',
       trendData: metadata.trendData || [],
       success: result.success,
-      error: result.error,
+      error: result.error || null,
     };
 
-    return {
+    const response: {
+      success: boolean;
+      tweetId?: string;
+      error?: string;
+      logData: any;
+    } = {
       success: result.success,
-      tweetId: result.tweetId || undefined,
-      error: result.error || undefined,
       logData,
     };
+
+    if (result.tweetId) {
+      response.tweetId = result.tweetId;
+    }
+    if (result.error) {
+      response.error = result.error;
+    }
+
+    return response;
   }
 
   /**

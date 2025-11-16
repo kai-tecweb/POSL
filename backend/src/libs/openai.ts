@@ -86,7 +86,7 @@ export class OpenAIHelper {
       personaProfile = '',
       recentDiary = '',
       toneSettings = {},
-      templateId = 'default',
+      templateId: _templateId = 'default', // 未使用だが型の一貫性のため保持
       additionalRules = '',
     } = promptData;
 

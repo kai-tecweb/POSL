@@ -81,7 +81,7 @@ functions:
 
   # 投稿ログ API
   getPostLogs:
-    handler: src/functions/posts/getPostLogs.handler
+    handler: dist/functions/posts/getPostLogs.handler
     events:
       - http:
           path: /post/logs
@@ -89,7 +89,7 @@ functions:
           cors: true
 
   getPostStatus:
-    handler: src/functions/posts/getPostStatus.handler
+    handler: dist/functions/posts/getPostStatus.handler
     events:
       - http:
           path: /post/status
@@ -97,7 +97,7 @@ functions:
           cors: true
 
   updatePostStatus:
-    handler: src/functions/posts/updatePostStatus.handler
+    handler: dist/functions/posts/updatePostStatus.handler
     events:
       - http:
           path: /post/status/{postId}
@@ -109,7 +109,7 @@ functions:
                 postId: true
 
   testPost:
-    handler: src/functions/posts/testPost.handler
+    handler: dist/functions/posts/testPost.handler
     events:
       - http:
           path: /test/post
@@ -118,7 +118,7 @@ functions:
 
   # 投稿生成・実行（スケジューラー用）
   generateAndPost:
-    handler: src/functions/scheduler/generateAndPost.handler
+    handler: dist/functions/scheduler/generateAndPost.handler
     timeout: 60
     memorySize: 1024
     events:
@@ -132,7 +132,7 @@ functions:
 
   # トレンド取得
   fetchTrends:
-    handler: src/functions/trends/fetchTrends.handler
+    handler: dist/functions/trends/fetchTrends.handler
     timeout: 30
     events:
       - http:

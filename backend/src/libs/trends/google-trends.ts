@@ -1,4 +1,5 @@
-import axios from 'axios';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import axios from 'axios'; // 将来のAPI実装で使用予定
 import { TrendData } from '../../types';
 
 /**

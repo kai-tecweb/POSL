@@ -53,7 +53,7 @@ export class DynamoDBHelper {
     try {
       await dynamoClient.put({
         TableName: tableName,
-        Item: item,
+        Item: item as Record<string, any>,
       });
     } catch (error) {
       console.error('DynamoDB PutItem Error:', error);
@@ -214,8 +214,8 @@ export class DynamoDBHelper {
         
         await dynamoClient.batchWrite({
           RequestItems: {
-            [tableName]: batch,
-          },
+            [tableName]: batch as any[],
+          } as Record<string, any[]>,
         });
       }
     } catch (error) {

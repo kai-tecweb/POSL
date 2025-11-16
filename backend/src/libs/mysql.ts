@@ -5,7 +5,7 @@ import { ENV } from './env';
  * MySQL 接続設定
  */
 const createMySQLPool = () => {
-  return mysql.createPool({
+  const baseConfig = {
     host: ENV.MYSQL_HOST || 'localhost',
     port: parseInt(ENV.MYSQL_PORT || '3306'),
     user: ENV.MYSQL_USER || 'root',
@@ -13,13 +13,22 @@ const createMySQLPool = () => {
     database: ENV.MYSQL_DATABASE || 'posl_db',
     charset: 'utf8mb4',
     connectionLimit: 10,
-    // SSL設定（本番環境用）
-    ...(ENV.NODE_ENV === 'production' ? {
+    acquireTimeout: 60000,
+    timeout: 60000,
+    reconnect: true
+  };
+
+  // 本番環境の場合のみSSL設定を追加
+  if (ENV.NODE_ENV === 'production') {
+    return mysql.createPool({
+      ...baseConfig,
       ssl: {
         rejectUnauthorized: true
       }
-    } : {})
-  });
+    });
+  } else {
+    return mysql.createPool(baseConfig);
+  }
 };
 
 // MySQL接続プール

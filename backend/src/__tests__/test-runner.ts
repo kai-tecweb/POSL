@@ -3,7 +3,7 @@
  * 型エラーの影響を受けずにテストケースの構造と仕様を確認できます
  */
 
-import { PromptEngine } from '../libs/prompt-engine';
+// import { PromptEngine } from '../libs/prompt-engine'; // 将来のテスト実装で使用予定
 
 // テストケース実行器（擬似Jest）
 class TestRunner {
@@ -80,8 +80,8 @@ const createMocks = () => ({
 async function runPromptEngineTests() {
   console.log('🧪 PromptEngine テストケース実行開始');
 
-  const mocks = createMocks();
-  const userId = 'test-user';
+  const _mocks = createMocks(); // 将来のテスト実装で使用予定
+  const _userId = 'test-user'; // 将来のテスト実装で使用予定
 
   runner.describe('PromptEngine.generatePrompt()', () => {
     runner.test('A-1. 正常系: システム/ユーザーメッセージが生成される', async () => {

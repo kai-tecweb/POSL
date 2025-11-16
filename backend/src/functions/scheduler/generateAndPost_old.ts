@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, PostLog } from '../../types';
-import { successResponse, errorResponse, internalServerErrorResponse } from '../../libs/response';
+import { successResponse, internalServerErrorResponse } from '../../libs/response';
 import { PromptEngine } from '../../libs/prompt-engine';
 import { OpenAIHelper } from '../../libs/openai';
 import { XHelper } from '../../libs/x-api';

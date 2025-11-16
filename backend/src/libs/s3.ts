@@ -136,11 +136,19 @@ export class S3Helper {
 
       const response = await s3Client.send(command);
       
-      return {
-        contentType: response.ContentType || undefined,
-        contentLength: response.ContentLength || undefined,
-        metadata: response.Metadata || undefined,
-      };
+      const result: { contentType?: string; contentLength?: number; metadata?: Record<string, string> } = {};
+      
+      if (response.ContentType) {
+        result.contentType = response.ContentType;
+      }
+      if (response.ContentLength) {
+        result.contentLength = response.ContentLength;
+      }
+      if (response.Metadata) {
+        result.metadata = response.Metadata;
+      }
+      
+      return result;
     } catch (error) {
       console.error('S3 Get Metadata Error:', error);
       throw new Error(`Failed to get metadata from S3: ${bucket}/${key}`);
