@@ -27,6 +27,29 @@ services:
     networks:
       - posl-network
 
+  # MySQL データベース（移行対応）
+  mysql:
+    image: mysql:8.0
+    container_name: posl-mysql
+    ports:
+      - "3307:3306"  # ポート競合回避のため3307を使用
+    environment:
+      MYSQL_ROOT_PASSWORD: posl_password
+      MYSQL_DATABASE: posl_db
+      MYSQL_USER: posl_user
+      MYSQL_PASSWORD: posl_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./infrastructure/mysql-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    networks:
+      - posl-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pposl_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Next.js フロントエンド開発環境
   frontend:
     build:
@@ -43,9 +66,16 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:3001
       - AWS_ENDPOINT_URL=http://dynamodb-local:8000
       - S3_ENDPOINT_URL=http://minio:9000
+      # MySQL接続設定
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=posl_user
+      - MYSQL_PASSWORD=posl_password
+      - MYSQL_DATABASE=posl_db
     depends_on:
       - dynamodb-local
       - minio
+      - mysql
       - backend
     networks:
       - posl-network
@@ -68,6 +98,13 @@ services:
       - S3_ENDPOINT_URL=http://minio:9000
       - AWS_ACCESS_KEY_ID=local
       - AWS_SECRET_ACCESS_KEY=local
+      # MySQL接続設定
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=posl_user
+      - MYSQL_PASSWORD=posl_password
+      - MYSQL_DATABASE=posl_db
+      # 外部API設定
       - OPENAI_API_KEY=${OPENAI_API_KEY:-dummy_key}
       - X_API_KEY=${X_API_KEY:-dummy_key}
       - X_API_SECRET=${X_API_SECRET:-dummy_secret}
@@ -76,6 +113,7 @@ services:
     depends_on:
       - dynamodb-local
       - minio
+      - mysql
     networks:
       - posl-network
 
@@ -94,10 +132,11 @@ services:
       - dynamodb-local
     networks:
       - posl-network
-    command: ["./wait-for-it.sh", "dynamodb-local:8000", "--", "node", "init-tables.js"]
+    command: ["sh", "-c", "sleep 10 && node init-tables.js"]
 
 volumes:
   minio_data:
+  mysql_data:
 
 networks:
   posl-network:

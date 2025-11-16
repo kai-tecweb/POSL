@@ -57,6 +57,13 @@ export const ENV = {
   AWS_ENDPOINT_URL: process.env.AWS_ENDPOINT_URL,
   S3_ENDPOINT_URL: process.env.S3_ENDPOINT_URL,
   
+  // MySQL データベース設定
+  MYSQL_HOST: getEnvVar('MYSQL_HOST', 'localhost'),
+  MYSQL_PORT: getEnvVar('MYSQL_PORT', '3306'),
+  MYSQL_USER: getEnvVar('MYSQL_USER', 'root'),
+  MYSQL_PASSWORD: getEnvVar('MYSQL_PASSWORD', 'password'),
+  MYSQL_DATABASE: getEnvVar('MYSQL_DATABASE', 'posl_db'),
+  
   // その他
   NODE_ENV: getEnvVar('NODE_ENV', 'development'),
 } as const;
