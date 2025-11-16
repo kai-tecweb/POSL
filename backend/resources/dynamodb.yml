@@ -1,0 +1,150 @@
+Resources:
+  # ローカル環境以外でのみ DynamoDB テーブルを作成
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Condition: IsNotLocal
+    Properties:
+      TableName: ${self:custom.tables.users}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
+  SettingsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: IsNotLocal
+    Properties:
+      TableName: ${self:custom.tables.settings}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: settingType
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: settingType
+          KeyType: RANGE
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
+  PostLogsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: IsNotLocal
+    Properties:
+      TableName: ${self:custom.tables.postLogs}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: postId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: postId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: timestamp-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
+  DiariesTable:
+    Type: AWS::DynamoDB::Table
+    Condition: IsNotLocal
+    Properties:
+      TableName: ${self:custom.tables.diaries}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: diaryId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: diaryId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: created-at-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
+  PersonaProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Condition: IsNotLocal
+    Properties:
+      TableName: ${self:custom.tables.personaProfiles}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
+  # S3 バケット
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    Condition: IsNotLocal
+    Properties:
+      BucketName: ${self:custom.buckets.audio}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
+Conditions:
+  IsNotLocal: !Not [!Equals ["${self:custom.stage}", "local"]]

@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # DynamoDB Local
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: posl-dynamodb-local
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    networks:
+      - posl-network
+
+  # MinIO (S3互換ストレージ)
+  minio:
+    image: minio/minio:latest
+    container_name: posl-minio
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - posl-network
+
+  # Next.js フロントエンド開発環境
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: posl-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - AWS_ENDPOINT_URL=http://dynamodb-local:8000
+      - S3_ENDPOINT_URL=http://minio:9000
+    depends_on:
+      - dynamodb-local
+      - minio
+      - backend
+    networks:
+      - posl-network
+
+  # Lambda関数開発環境（ローカル実行）
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: posl-backend
+    ports:
+      - "3001:3001"  # API Gateway ローカル
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - AWS_REGION=ap-northeast-1
+      - AWS_ENDPOINT_URL=http://dynamodb-local:8000
+      - S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-dummy_key}
+      - X_API_KEY=${X_API_KEY:-dummy_key}
+      - X_API_SECRET=${X_API_SECRET:-dummy_secret}
+      - X_ACCESS_TOKEN=${X_ACCESS_TOKEN:-dummy_token}
+      - X_ACCESS_TOKEN_SECRET=${X_ACCESS_TOKEN_SECRET:-dummy_token_secret}
+    depends_on:
+      - dynamodb-local
+      - minio
+    networks:
+      - posl-network
+
+  # DynamoDB初期化用コンテナ
+  dynamodb-init:
+    build:
+      context: ./infrastructure
+      dockerfile: Dockerfile.init
+    container_name: posl-dynamodb-init
+    environment:
+      - AWS_REGION=ap-northeast-1
+      - AWS_ENDPOINT_URL=http://dynamodb-local:8000
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+    depends_on:
+      - dynamodb-local
+    networks:
+      - posl-network
+    command: ["./wait-for-it.sh", "dynamodb-local:8000", "--", "node", "init-tables.js"]
+
+volumes:
+  minio_data:
+
+networks:
+  posl-network:
+    driver: bridge

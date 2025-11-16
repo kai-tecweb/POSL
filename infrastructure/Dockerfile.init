@@ -1,0 +1,15 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# 必要なパッケージをインストール
+RUN npm init -y && npm install aws-sdk
+
+# 初期化スクリプトとwait-for-itをコピー
+COPY init-tables.js .
+COPY wait-for-it.sh .
+
+# wait-for-itに実行権限を付与
+RUN chmod +x wait-for-it.sh
+
+CMD ["node", "init-tables.js"]

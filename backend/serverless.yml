@@ -1,0 +1,197 @@
+service: posl-backend
+frameworkVersion: '3'
+
+custom:
+  webpack:
+    webpackConfig: 'webpack.config.js'
+    includeModules: true
+    excludeFiles: src/**/*.test.ts
+  
+  # ステージ固有の設定
+  stage: ${opt:stage, self:provider.stage}
+  tableSuffix: ${self:custom.stage}
+  
+  # DynamoDB テーブル名
+  tables:
+    users: posl-users-${self:custom.tableSuffix}
+    settings: posl-settings-${self:custom.tableSuffix}
+    postLogs: posl-post-logs-${self:custom.tableSuffix}
+    diaries: posl-diaries-${self:custom.tableSuffix}
+    personaProfiles: posl-persona-profiles-${self:custom.tableSuffix}
+  
+  # S3 バケット名
+  buckets:
+    audio: posl-audio-bucket-${self:custom.tableSuffix}
+  
+  # IAM ロール設定
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:BatchGetItem
+        - dynamodb:BatchWriteItem
+      Resource:
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.users}"
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.settings}"
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.postLogs}"
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.diaries}"
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.personaProfiles}"
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.postLogs}/index/*"
+        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.diaries}/index/*"
+    - Effect: Allow
+      Action:
+        - s3:GetObject
+        - s3:PutObject
+        - s3:DeleteObject
+      Resource:
+        - "arn:aws:s3:::${self:custom.buckets.audio}/*"
+    - Effect: Allow
+      Action:
+        - secretsmanager:GetSecretValue
+      Resource:
+        - "arn:aws:secretsmanager:${aws:region}:${aws:accountId}:secret:posl/*"
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  architecture: x86_64
+  stage: local
+  region: ap-northeast-1
+  memorySize: 512
+  timeout: 30
+  logRetentionInDays: 14
+  
+  environment:
+    STAGE: ${self:custom.stage}
+    REGION: ${aws:region}
+    USERS_TABLE: ${self:custom.tables.users}
+    SETTINGS_TABLE: ${self:custom.tables.settings}
+    POST_LOGS_TABLE: ${self:custom.tables.postLogs}
+    DIARIES_TABLE: ${self:custom.tables.diaries}
+    PERSONA_PROFILES_TABLE: ${self:custom.tables.personaProfiles}
+    AUDIO_BUCKET: ${self:custom.buckets.audio}
+    NODE_ENV: ${self:custom.stage}
+  
+  iam:
+    role:
+      statements: ${self:custom.iamRoleStatements}
+
+plugins:
+  - serverless-webpack
+  - serverless-offline
+  - serverless-iam-roles-per-function
+
+functions:
+  # 設定管理 API
+  getSettings:
+    handler: src/functions/settings/getSettings.handler
+    events:
+      - http:
+          path: /settings/{settingType}
+          method: get
+          cors: true
+          request:
+            parameters:
+              paths:
+                settingType: true
+
+  updateSettings:
+    handler: src/functions/settings/updateSettings.handler
+    events:
+      - http:
+          path: /settings/{settingType}
+          method: put
+          cors: true
+          request:
+            parameters:
+              paths:
+                settingType: true
+
+  # 投稿ログ API
+  getPostLogs:
+    handler: src/functions/posts/getPostLogs.handler
+    events:
+      - http:
+          path: /post/logs
+          method: get
+          cors: true
+
+  testPost:
+    handler: src/functions/posts/testPost.handler
+    events:
+      - http:
+          path: /test/post
+          method: post
+          cors: true
+
+  # 日記管理 API
+  uploadDiary:
+    handler: src/functions/diary/uploadDiary.handler
+    timeout: 60
+    memorySize: 1024
+    events:
+      - http:
+          path: /diary/upload
+          method: post
+          cors: true
+
+  getDiaryList:
+    handler: src/functions/diary/getDiaryList.handler
+    events:
+      - http:
+          path: /diary/list
+          method: get
+          cors: true
+
+  # 人格データ API
+  getPersonaProfile:
+    handler: src/functions/persona/getPersonaProfile.handler
+    events:
+      - http:
+          path: /persona/profile
+          method: get
+          cors: true
+
+  # 投稿生成・実行（スケジューラー用）
+  generateAndPost:
+    handler: src/functions/scheduler/generateAndPost.handler
+    timeout: 60
+    memorySize: 1024
+    events:
+      - schedule: 
+          rate: cron(0 11 * * ? *)  # 毎日20:00 JST（UTC 11:00）
+          enabled: false  # 初期は無効
+
+  # トレンド取得
+  fetchTrends:
+    handler: src/functions/trends/fetchTrends.handler
+    timeout: 30
+    events:
+      - http:
+          path: /trends/fetch
+          method: get
+          cors: true
+
+resources:
+  # ローカル環境では DynamoDB のリソース定義をスキップ
+  Resources: ${file(./resources/dynamodb.yml):Resources}
+  
+  Outputs:
+    ApiGatewayRestApiId:
+      Value:
+        Ref: ApiGatewayRestApi
+      Export:
+        Name: ${self:service}-${self:custom.stage}-ApiGatewayRestApiId
+    
+    ApiGatewayRestApiRootResourceId:
+      Value:
+         Fn::GetAtt:
+          - ApiGatewayRestApi
+          - RootResourceId 
+      Export:
+        Name: ${self:service}-${self:custom.stage}-ApiGatewayRestApiRootResourceId

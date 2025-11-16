@@ -1,0 +1,21 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# package.json と package-lock.json をコピー
+COPY package*.json ./
+
+# 依存関係をインストール
+RUN npm ci
+
+# グローバルに serverless をインストール
+RUN npm install -g serverless
+
+# アプリケーションコードをコピー
+COPY . .
+
+# ポート3001を公開
+EXPOSE 3001
+
+# 開発サーバーを起動（serverless-offline）
+CMD ["npm", "run", "dev"]
