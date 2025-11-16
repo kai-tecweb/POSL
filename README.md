@@ -1,4 +1,4 @@
-# POSL (Post Social Life) V1.0
+# 🚀 POSL (Personal Social Life) V1.0
 
 POSLは「あなたの分身が書いたような、自然で前向きなX投稿」を毎日20時に自動生成・投稿するパーソナル投稿AIシステムです。
 
@@ -7,6 +7,28 @@ POSLは「あなたの分身が書いたような、自然で前向きなX投稿
 - AIが文章を自動生成して、毎日1回X（旧Twitter）に投稿
 - ユーザーの人格データ・日記・トレンド・曜日テーマを混ぜて一貫性のある発信を継続
 - Next.js + AWS Serverlessによる現代的なアーキテクチャ
+
+## 📊 開発進捗状況
+
+### ✅ Phase 0: 準備フェーズ (完了)
+- [x] Docker開発環境構築
+- [x] GitHubリポジトリ初期化  
+- [x] ESLint/Prettier設定
+- [x] VSCode設定
+- [x] プロジェクト構造作成
+
+### ✅ Phase 1: バックエンド基盤 (完了)
+- [x] Serverless Framework セットアップ
+- [x] AWS サービス接続ライブラリ (DynamoDB, S3, Secrets Manager)
+- [x] OpenAI API連携 (GPT-4, Whisper) 
+- [x] X (Twitter) API連携
+- [x] TypeScript型定義とユーティリティ
+
+### 🚧 Phase 2: API Gateway + Lambda関数 (進行中)
+- [ ] トレンド取得API実装
+- [ ] DynamoDB CRUD操作層完成
+- [ ] プロンプトエンジン実装
+- [ ] 投稿生成システム実装
 
 ## 🛠 技術スタック
 
