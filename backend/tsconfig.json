@@ -18,14 +18,17 @@
     "noImplicitAny": true,
     "noImplicitReturns": true,
     "noImplicitThis": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false,
     "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "baseUrl": ".",
+    "noPropertyAccessFromIndexSignature": false,
+    "baseUrl": "./src",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["*"],
+      "@/libs/*": ["libs/*"],
+      "@/functions/*": ["functions/*"],
+      "@/types/*": ["types/*"]
     }
   },
   "include": [

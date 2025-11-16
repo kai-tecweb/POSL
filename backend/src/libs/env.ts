@@ -54,8 +54,8 @@ export const ENV = {
   X_ACCESS_TOKEN_SECRET: getEnvVar('X_ACCESS_TOKEN_SECRET', 'dummy_token_secret'),
   
   // AWS エンドポイント（ローカル開発用）
-  AWS_ENDPOINT_URL: process.env.AWS_ENDPOINT_URL,
-  S3_ENDPOINT_URL: process.env.S3_ENDPOINT_URL,
+  AWS_ENDPOINT_URL: process.env['AWS_ENDPOINT_URL'],
+  S3_ENDPOINT_URL: process.env['S3_ENDPOINT_URL'],
   
   // MySQL データベース設定
   MYSQL_HOST: getEnvVar('MYSQL_HOST', 'localhost'),

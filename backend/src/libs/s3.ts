@@ -137,9 +137,9 @@ export class S3Helper {
       const response = await s3Client.send(command);
       
       return {
-        contentType: response.ContentType,
-        contentLength: response.ContentLength,
-        metadata: response.Metadata,
+        contentType: response.ContentType || undefined,
+        contentLength: response.ContentLength || undefined,
+        metadata: response.Metadata || undefined,
       };
     } catch (error) {
       console.error('S3 Get Metadata Error:', error);

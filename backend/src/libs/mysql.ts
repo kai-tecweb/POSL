@@ -13,13 +13,12 @@ const createMySQLPool = () => {
     database: ENV.MYSQL_DATABASE || 'posl_db',
     charset: 'utf8mb4',
     connectionLimit: 10,
-    acquireTimeout: 60000,
-    timeout: 60000,
-    reconnect: true,
     // SSL設定（本番環境用）
-    ssl: ENV.NODE_ENV === 'production' ? {
-      rejectUnauthorized: true
-    } : false
+    ...(ENV.NODE_ENV === 'production' ? {
+      ssl: {
+        rejectUnauthorized: true
+      }
+    } : {})
   });
 };
 

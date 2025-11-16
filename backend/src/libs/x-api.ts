@@ -179,7 +179,12 @@ export class XHelper {
           likeCount: tweet.public_metrics.like_count,
           replyCount: tweet.public_metrics.reply_count,
           quoteCount: tweet.public_metrics.quote_count,
-        } : undefined,
+        } : {
+          retweetCount: 0,
+          likeCount: 0,
+          replyCount: 0,
+          quoteCount: 0,
+        },
       })) || [];
     } catch (error) {
       console.error('X Get User Tweets Error:', error);
@@ -246,8 +251,8 @@ export class XHelper {
 
     return {
       success: result.success,
-      tweetId: result.tweetId,
-      error: result.error,
+      tweetId: result.tweetId || undefined,
+      error: result.error || undefined,
       logData,
     };
   }

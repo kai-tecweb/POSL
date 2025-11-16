@@ -49,7 +49,7 @@ export class DynamoDBHelper {
   /**
    * アイテムを作成/更新
    */
-  static async putItem<T>(tableName: string, item: T): Promise<void> {
+  static async putItem<T extends Record<string, any>>(tableName: string, item: T): Promise<void> {
     try {
       await dynamoClient.put({
         TableName: tableName,
@@ -193,7 +193,7 @@ export class DynamoDBHelper {
   /**
    * バッチでアイテムを書き込み
    */
-  static async batchWriteItems<T>(
+  static async batchWriteItems<T extends Record<string, any>>(
     tableName: string,
     items: T[],
     operation: 'put' | 'delete' = 'put'

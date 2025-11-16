@@ -38,14 +38,14 @@ global.console = {
 };
 
 // Date のモック設定用ヘルパー
-global.mockDate = (dateString: string) => {
+(global as any).mockDate = (dateString: string) => {
   const fixedDate = new Date(dateString);
   jest.spyOn(Date, 'now').mockReturnValue(fixedDate.getTime());
   jest.spyOn(global, 'Date').mockImplementation(() => fixedDate as any);
 };
 
 // Date モックのクリア用ヘルパー
-global.clearDateMock = () => {
+(global as any).clearDateMock = () => {
   jest.spyOn(Date, 'now').mockRestore();
   jest.spyOn(global, 'Date').mockRestore();
 };

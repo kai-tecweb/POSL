@@ -2,10 +2,10 @@ service: posl-backend
 frameworkVersion: '3'
 
 custom:
-  webpack:
-    webpackConfig: 'webpack.config.js'
-    includeModules: true
-    excludeFiles: src/**/*.test.ts
+  serverless-offline:
+    httpPort: 3001
+    host: 0.0.0.0
+    stage: local
   
   # ステージ固有の設定
   stage: ${opt:stage, self:provider.stage}
@@ -51,13 +51,12 @@ provider:
     AWS_SECRET_ACCESS_KEY: ${opt:aws-secret-access-key, 'local'}
 
 plugins:
-  - serverless-webpack
   - serverless-offline
 
 functions:
   # 設定管理 API
   getSettings:
-    handler: src/functions/settings/getSettings.handler
+    handler: dist/functions/settings/getSettings.handler
     events:
       - http:
           path: /settings/{settingType}
@@ -69,7 +68,7 @@ functions:
                 settingType: true
 
   updateSettings:
-    handler: src/functions/settings/updateSettings.handler
+    handler: dist/functions/settings/updateSettings.handler
     events:
       - http:
           path: /settings/{settingType}

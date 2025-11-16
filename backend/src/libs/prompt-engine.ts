@@ -127,7 +127,7 @@ export class PromptEngine {
       const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'week-theme'
-      });
+      }) as { data?: WeekThemeSettings } | undefined;
       
       return setting?.data || {
         monday: '月曜日は新しいスタート！',
@@ -160,7 +160,7 @@ export class PromptEngine {
       const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'event'
-      });
+      }) as { data?: EventSettings } | undefined;
       
       return setting?.data || {
         enabled: true,
