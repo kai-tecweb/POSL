@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, PostLog } from '../../types';
-import { successResponse, errorResponse, internalServerErrorResponse } from '../../libs/response';
+import { successResponse, internalServerErrorResponse } from '../../libs/response';
 import { PromptEngine } from '../../libs/prompt-engine';
 import { OpenAIHelper } from '../../libs/openai';
 import { XHelper } from '../../libs/x-api';
@@ -18,7 +18,113 @@ function generateUUID(): string {
 }
 
 /**
- * 投稿生成・実行 Lambda 関数
+ * 指数バックオフによるリトライ機能
+ */
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  maxAttempts: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: any;
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      console.log(`Attempt ${attempt} failed:`, error);
+      
+      if (attempt === maxAttempts) {
+        break;
+      }
+      
+      // 指数バックオフ: 1s, 2s, 4s...
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+}
+
+/**
+ * 投稿ステータスを更新する関数
+ */
+async function updatePostStatus(
+  userId: string,
+  postId: string,
+  status: 'pending' | 'processing' | 'completed' | 'failed',
+  error?: string,
+  result?: any
+): Promise<void> {
+  try {
+    let updateExpression = 'SET #status = :status, updatedAt = :updatedAt';
+    const expressionAttributeNames: any = {
+      '#status': 'status'
+    };
+    const expressionAttributeValues: any = {
+      ':status': status,
+      ':updatedAt': new Date().toISOString()
+    };
+    
+    if (error) {
+      updateExpression += ', #error = :error';
+      expressionAttributeNames['#error'] = 'error';
+      expressionAttributeValues[':error'] = error;
+    }
+    
+    if (result) {
+      updateExpression += ', #result = :result';
+      expressionAttributeNames['#result'] = 'result';
+      expressionAttributeValues[':result'] = result;
+    }
+    
+    await DynamoDBHelper.updateItem(
+      ENV.POST_LOGS_TABLE,
+      { userId, postId },
+      updateExpression,
+      expressionAttributeValues,
+      expressionAttributeNames
+    );
+  } catch (updateError) {
+    console.error('Failed to update post status:', updateError);
+  }
+}
+
+/**
+ * エラーログを記録する関数
+ */
+async function logError(
+  userId: string,
+  postId: string,
+  error: Error,
+  context: any = {}
+): Promise<void> {
+  try {
+    const errorLog = {
+      userId,
+      postId,
+      timestamp: new Date().toISOString(),
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      },
+      context
+    };
+    
+    console.error('Error logged:', JSON.stringify(errorLog, null, 2));
+    
+    // エラーログを専用テーブルに保存（テーブルが存在する場合）
+    // await DynamoDBHelper.putItem('error-logs', errorLog);
+    
+  } catch (logError) {
+    console.error('Failed to log error:', logError);
+  }
+}
+
+/**
+ * 投稿生成・実行 Lambda 関数（エラーハンドリング強化版）
  * EventBridge から自動実行される、またはAPIから手動実行可能
  */
 export const handler = async (
@@ -26,49 +132,79 @@ export const handler = async (
 ): Promise<APIGatewayProxyResult | any> => {
   console.log('Event:', JSON.stringify(event, null, 2));
 
+  let userId: string = '';
+  let postId: string = '';
+  
   try {
-    // ユーザーIDの取得（APIコール時はヘッダーから、EventBridge実行時は環境変数から）
-    let userId: string;
-    
+    // ユーザーIDの取得
     if (event.source === 'aws.events') {
-      // EventBridge からの実行
       userId = event.detail?.userId || 'default-user';
     } else {
-      // API Gateway からの実行
       userId = event.headers?.['X-User-Id'] || 'default-user';
     }
+    
+    // 投稿IDの生成
+    postId = generateUUID().replace(/-/g, '');
+    
+    // 初期ステータスをpendingで作成
+    await updatePostStatus(userId, postId, 'pending');
 
-    // プロンプト生成エンジンを初期化
+    // processingステータスに更新
+    await updatePostStatus(userId, postId, 'processing');
+
+    // プロンプト生成エンジンを初期化（リトライ付き）
     const promptEngine = new PromptEngine(userId);
+    
+    const { system, user, context } = await retryWithBackoff(
+      () => promptEngine.generatePrompt(),
+      3,
+      1000
+    );
 
-    // 投稿プロンプトを生成
-    const { system, user, context } = await promptEngine.generatePrompt();
-
-    // OpenAI GPT-4 で投稿文を生成
-    const postContent = await OpenAIHelper.generateText(user, {
-      model: 'gpt-4',
-      maxTokens: 200,
-      temperature: 0.8,
-      systemPrompt: system
-    });
+    // OpenAI GPT-4 で投稿文を生成（リトライ付き）
+    const postContent = await retryWithBackoff(
+      () => OpenAIHelper.generateText(user, {
+        model: 'gpt-4',
+        maxTokens: 200,
+        temperature: 0.8,
+        systemPrompt: system
+      }),
+      3,
+      2000
+    );
 
     // 投稿内容の検証
     if (!postContent || postContent.length > 280) {
-      throw new Error('Generated content is invalid or too long');
+      throw new Error(`Generated content is invalid (length: ${postContent?.length || 0})`);
     }
 
     let xPostId: string | undefined;
+    let postResult: any = null;
 
     // 実際にX（旧Twitter）に投稿するかチェック
     const shouldPost = ENV.NODE_ENV === 'production';
     
     if (shouldPost) {
       try {
-        // X API で実際に投稿
-        const result = await XHelper.postTweet(postContent);
-        xPostId = result.tweetId;
+        // X API で実際に投稿（リトライ付き）
+        postResult = await retryWithBackoff(
+          () => XHelper.postTweet(postContent),
+          2,
+          3000
+        );
+        xPostId = postResult.tweetId;
       } catch (xError) {
-        // X投稿が失敗してもログは保存する
+        console.error('X posting failed after retries:', xError);
+        await logError(userId, postId, xError as Error, { postContent, context });
+        
+        // X投稿が失敗しても処理は継続
+        await updatePostStatus(
+          userId, 
+          postId, 
+          'failed', 
+          `X posting failed: ${(xError as Error).message}`,
+          { postContent, attemptedPost: true }
+        );
       }
     }
 
@@ -78,17 +214,26 @@ export const handler = async (
     // 投稿ログをDynamoDBに保存
     const postLog: PostLog = {
       userId,
-      postId: generateUUID().replace(/-/g, ''),
+      postId,
       content: postContent,
       timestamp: new Date().toISOString(),
       xPostId: xPostId || '',
       prompt: fullPrompt,
       trendData: context.trends,
       success: !!xPostId,
-      ...(xPostId ? {} : { error: 'Posting disabled or failed' })
+      ...(xPostId ? {} : { error: shouldPost ? 'X posting failed' : 'Posting disabled for non-production' })
     };
 
     await DynamoDBHelper.putItem(ENV.POST_LOGS_TABLE, postLog);
+
+    // 成功ステータスに更新
+    await updatePostStatus(
+      userId, 
+      postId, 
+      xPostId ? 'completed' : 'failed', 
+      xPostId ? undefined : (shouldPost ? 'X posting failed' : 'Posting disabled'),
+      { xPostId, postContent, context: context.trends }
+    );
 
     // レスポンス
     const response = {
@@ -103,7 +248,9 @@ export const handler = async (
       context,
       debug: {
         systemPrompt: system.substring(0, 200) + '...',
-        userPrompt: user.substring(0, 200) + '...'
+        userPrompt: user.substring(0, 200) + '...',
+        shouldPost,
+        postResult
       }
     };
 
@@ -117,6 +264,16 @@ export const handler = async (
 
   } catch (error: any) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    console.error('Critical error in generateAndPost:', error);
+    
+    // エラーログを記録
+    if (userId && postId) {
+      await logError(userId, postId, error, { eventSource: event.source });
+      
+      // 失敗ステータスに更新
+      await updatePostStatus(userId, postId, 'failed', errorMessage);
+    }
     
     // EventBridge からの実行の場合
     if (event.source === 'aws.events') {

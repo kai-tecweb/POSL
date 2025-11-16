@@ -11,6 +11,9 @@ custom:
   stage: ${opt:stage, self:provider.stage}
   tableSuffix: ${self:custom.stage}
   
+  # 条件設定
+  isLocal: ${strToBool(${opt:local, false})}
+  
   # DynamoDB テーブル名
   tables:
     users: posl-users-${self:custom.tableSuffix}
@@ -22,39 +25,6 @@ custom:
   # S3 バケット名
   buckets:
     audio: posl-audio-bucket-${self:custom.tableSuffix}
-  
-  # IAM ロール設定
-  iamRoleStatements:
-    - Effect: Allow
-      Action:
-        - dynamodb:Query
-        - dynamodb:Scan
-        - dynamodb:GetItem
-        - dynamodb:PutItem
-        - dynamodb:UpdateItem
-        - dynamodb:DeleteItem
-        - dynamodb:BatchGetItem
-        - dynamodb:BatchWriteItem
-      Resource:
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.users}"
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.settings}"
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.postLogs}"
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.diaries}"
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.personaProfiles}"
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.postLogs}/index/*"
-        - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:custom.tables.diaries}/index/*"
-    - Effect: Allow
-      Action:
-        - s3:GetObject
-        - s3:PutObject
-        - s3:DeleteObject
-      Resource:
-        - "arn:aws:s3:::${self:custom.buckets.audio}/*"
-    - Effect: Allow
-      Action:
-        - secretsmanager:GetSecretValue
-      Resource:
-        - "arn:aws:secretsmanager:${aws:region}:${aws:accountId}:secret:posl/*"
 
 provider:
   name: aws
@@ -68,7 +38,7 @@ provider:
   
   environment:
     STAGE: ${self:custom.stage}
-    REGION: ${aws:region}
+    REGION: ap-northeast-1
     USERS_TABLE: ${self:custom.tables.users}
     SETTINGS_TABLE: ${self:custom.tables.settings}
     POST_LOGS_TABLE: ${self:custom.tables.postLogs}
@@ -76,15 +46,13 @@ provider:
     PERSONA_PROFILES_TABLE: ${self:custom.tables.personaProfiles}
     AUDIO_BUCKET: ${self:custom.buckets.audio}
     NODE_ENV: ${self:custom.stage}
-  
-  iam:
-    role:
-      statements: ${self:custom.iamRoleStatements}
+    AWS_ENDPOINT_URL: ${opt:aws-endpoint-url, ''}
+    AWS_ACCESS_KEY_ID: ${opt:aws-access-key-id, 'local'}
+    AWS_SECRET_ACCESS_KEY: ${opt:aws-secret-access-key, 'local'}
 
 plugins:
   - serverless-webpack
   - serverless-offline
-  - serverless-iam-roles-per-function
 
 functions:
   # 設定管理 API
@@ -121,106 +89,32 @@ functions:
           method: get
           cors: true
 
+  getPostStatus:
+    handler: src/functions/posts/getPostStatus.handler
+    events:
+      - http:
+          path: /post/status
+          method: get
+          cors: true
+
+  updatePostStatus:
+    handler: src/functions/posts/updatePostStatus.handler
+    events:
+      - http:
+          path: /post/status/{postId}
+          method: put
+          cors: true
+          request:
+            parameters:
+              paths:
+                postId: true
+
   testPost:
     handler: src/functions/posts/testPost.handler
     events:
       - http:
           path: /test/post
           method: post
-          cors: true
-
-  # 日記管理 API
-  uploadDiary:
-    handler: src/functions/diary/uploadDiary.handler
-    timeout: 60
-    memorySize: 1024
-    events:
-      - http:
-          path: /diary/upload
-          method: post
-          cors: true
-
-  getDiaryList:
-    handler: src/functions/diary/getDiaryList.handler
-    events:
-      - http:
-          path: /diary/list
-          method: get
-          cors: true
-
-  # 音声日記 API
-  uploadAudio:
-    handler: src/functions/diary/uploadAudio.handler
-    timeout: 30
-    events:
-      - http:
-          path: /diary/{userId}/upload-audio
-          method: post
-          cors: true
-          request:
-            parameters:
-              paths:
-                userId: true
-
-  transcribeAudio:
-    handler: src/functions/diary/transcribeAudio.handler
-    timeout: 60
-    memorySize: 1024
-    events:
-      - http:
-          path: /diary/{userId}/transcribe
-          method: post
-          cors: true
-          request:
-            parameters:
-              paths:
-                userId: true
-
-  getDiaries:
-    handler: src/functions/diary/getDiaries.handler
-    events:
-      - http:
-          path: /diary/{userId}/diaries
-          method: get
-          cors: true
-          request:
-            parameters:
-              paths:
-                userId: true
-
-  getDiary:
-    handler: src/functions/diary/getDiary.handler
-    events:
-      - http:
-          path: /diary/{userId}/diaries/{diaryId}
-          method: get
-          cors: true
-          request:
-            parameters:
-              paths:
-                userId: true
-                diaryId: true
-
-  deleteDiary:
-    handler: src/functions/diary/deleteDiary.handler
-    events:
-      - http:
-          path: /diary/{userId}/diaries/{diaryId}
-          method: delete
-          cors: true
-          request:
-            parameters:
-              paths:
-                userId: true
-                diaryId: true
-
-  # 人格データ API
-  getPersonaProfile:
-    handler: src/functions/persona/getPersonaProfile.handler
-    events:
-      - http:
-          path: /persona/profile
-          method: get
           cors: true
 
   # 投稿生成・実行（スケジューラー用）
@@ -231,7 +125,11 @@ functions:
     events:
       - schedule: 
           rate: cron(0 11 * * ? *)  # 毎日20:00 JST（UTC 11:00）
-          enabled: false  # 初期は無効
+          enabled: true  # 自動投稿を有効化
+      - http:
+          path: /post/generate-and-post
+          method: post
+          cors: true
 
   # トレンド取得
   fetchTrends:
