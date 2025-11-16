@@ -1,6 +1,8 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from '../../types';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Settings } from '../../types';
 import { successResponse, errorResponse, internalServerErrorResponse, corsResponse, validationErrorResponse } from '../../libs/response';
 import { getPathParameter, getUserId, isValidSettingType, parseBody, validateRequired } from '../../libs/validation';
+import { DynamoDBHelper } from '../../libs/dynamodb';
+import { ENV } from '../../libs/env';
 
 /**
  * 設定更新 Lambda 関数
@@ -39,15 +41,21 @@ export const handler = async (
     }
 
     // TODO: DynamoDB に設定を保存
-    // 現在はモックレスポンスを返す
-    const updatedData = {
-      settingType,
-      userId,
-      data: body,
-      updatedAt: new Date().toISOString()
-    };
+    try {
+      const settingData: Settings = {
+        userId,
+        settingType: settingType as any,
+        data: body,
+        updatedAt: new Date().toISOString()
+      };
 
-    return successResponse(updatedData);
+      await DynamoDBHelper.putItem(ENV.SETTINGS_TABLE, settingData);
+
+      return successResponse(settingData);
+    } catch (dbError) {
+      console.error('Error saving settings to DynamoDB:', dbError);
+      return internalServerErrorResponse('Failed to save settings');
+    }
 
   } catch (error) {
     if (error instanceof Error) {
@@ -123,6 +131,6 @@ function validateSettingData(settingType: string, data: any): { isValid: boolean
 
   return {
     isValid: errors.length === 0,
-    errors: errors.length > 0 ? errors : undefined
+    errors: errors.length > 0 ? errors : []
   };
 }

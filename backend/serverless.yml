@@ -148,6 +148,72 @@ functions:
           method: get
           cors: true
 
+  # 音声日記 API
+  uploadAudio:
+    handler: src/functions/diary/uploadAudio.handler
+    timeout: 30
+    events:
+      - http:
+          path: /diary/{userId}/upload-audio
+          method: post
+          cors: true
+          request:
+            parameters:
+              paths:
+                userId: true
+
+  transcribeAudio:
+    handler: src/functions/diary/transcribeAudio.handler
+    timeout: 60
+    memorySize: 1024
+    events:
+      - http:
+          path: /diary/{userId}/transcribe
+          method: post
+          cors: true
+          request:
+            parameters:
+              paths:
+                userId: true
+
+  getDiaries:
+    handler: src/functions/diary/getDiaries.handler
+    events:
+      - http:
+          path: /diary/{userId}/diaries
+          method: get
+          cors: true
+          request:
+            parameters:
+              paths:
+                userId: true
+
+  getDiary:
+    handler: src/functions/diary/getDiary.handler
+    events:
+      - http:
+          path: /diary/{userId}/diaries/{diaryId}
+          method: get
+          cors: true
+          request:
+            parameters:
+              paths:
+                userId: true
+                diaryId: true
+
+  deleteDiary:
+    handler: src/functions/diary/deleteDiary.handler
+    events:
+      - http:
+          path: /diary/{userId}/diaries/{diaryId}
+          method: delete
+          cors: true
+          request:
+            parameters:
+              paths:
+                userId: true
+                diaryId: true
+
   # 人格データ API
   getPersonaProfile:
     handler: src/functions/persona/getPersonaProfile.handler

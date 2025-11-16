@@ -65,9 +65,10 @@ export interface PostLog {
 
 export interface TrendData {
   keyword: string;
-  source: 'google' | 'yahoo';
   rank: number;
   category?: string;
+  trafficVolume?: number;
+  region?: string;
 }
 
 // 日記・人格関連
@@ -80,6 +81,10 @@ export interface Diary {
   emotionTags: string[];
   createdAt: string;
   processedAt?: string;
+  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  s3Key?: string;
+  duration?: number;
+  fileSize?: number;
 }
 
 export interface PersonaTrait {
@@ -193,4 +198,30 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
+}
+
+// 音声アップロード関連
+export interface AudioUploadRequest {
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+}
+
+export interface AudioUploadResponse {
+  uploadUrl: string;
+  diaryId: string;
+  s3Key: string;
+}
+
+export interface TranscriptionRequest {
+  diaryId: string;
+  s3Key: string;
+  language?: string;
+}
+
+export interface TranscriptionResponse {
+  diaryId: string;
+  transcribedText: string;
+  confidence: number;
+  processingTimeMs: number;
 }
