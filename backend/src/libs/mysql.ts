@@ -43,6 +43,12 @@ export class MySQLHelper {
       'posl-dev-diaries': 'diaries',
       'posl-dev-personaProfiles': 'persona_profiles',
       // ローカル環境用
+      'posl-users-local': 'users',
+      'posl-settings-local': 'settings',
+      'posl-post-logs-local': 'post_logs',
+      'posl-diaries-local': 'diaries',
+      'posl-persona-profiles-local': 'persona_profiles',
+      // 短縮形
       'Users': 'users',
       'Settings': 'settings',
       'PostLogs': 'post_logs', 
@@ -250,13 +256,25 @@ export class MySQLHelper {
       let whereClause = '';
       let whereValues: any[] = [];
       
-      // FilterExpressionをWHEREに変換
-      if (filterExpression && expressionAttributeValues) {
-        const { whereClause: filter, whereValues: values } = this.parseFilterExpression(
-          table, filterExpression, expressionAttributeValues, expressionAttributeNames
-        );
-        whereClause = `WHERE ${filter}`;
-        whereValues = values;
+      // より簡単なフィルタ処理：直接MySQLクエリを使用
+      if (filterExpression) {
+        if (expressionAttributeValues && Object.keys(expressionAttributeValues).length > 0) {
+          // DynamoDB形式の場合の変換
+          if (filterExpression.includes(':')) {
+            const { whereClause: filter, whereValues: values } = this.parseFilterExpression(
+              table, filterExpression, expressionAttributeValues, expressionAttributeNames
+            );
+            whereClause = `WHERE ${filter}`;
+            whereValues = values;
+          } else {
+            // MySQL形式の場合
+            whereClause = `WHERE ${filterExpression}`;
+            whereValues = Object.values(expressionAttributeValues);
+          }
+        } else {
+          // フィルタのみの場合
+          whereClause = `WHERE ${filterExpression}`;
+        }
       }
       
       const limitClause = limit ? `LIMIT ${limit}` : '';

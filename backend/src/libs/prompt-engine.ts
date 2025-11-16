@@ -1,4 +1,4 @@
-import { DynamoDBHelper } from './dynamodb';
+import { MySQLHelper } from './mysql';
 import { ENV } from './env';
 import { 
   WeekThemeSettings, 
@@ -124,10 +124,10 @@ export class PromptEngine {
    */
   private async getWeekThemeSettings(): Promise<WeekThemeSettings> {
     try {
-      const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
+      const setting = await MySQLHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'week-theme'
-      }) as { data?: WeekThemeSettings } | undefined;
+      }) as any;
       
       return setting?.data || {
         monday: '月曜日は新しいスタート！',
@@ -157,10 +157,10 @@ export class PromptEngine {
    */
   private async getEventSettings(): Promise<EventSettings> {
     try {
-      const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
+      const setting = await MySQLHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'event'
-      }) as { data?: EventSettings } | undefined;
+      }) as any;
       
       return setting?.data || {
         enabled: true,
@@ -182,7 +182,7 @@ export class PromptEngine {
    */
   private async getTrendSettings(): Promise<TrendSettings> {
     try {
-      const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
+      const setting = await MySQLHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'trend'
       });
@@ -211,7 +211,7 @@ export class PromptEngine {
    */
   private async getToneSettings(): Promise<ToneSettings> {
     try {
-      const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
+      const setting = await MySQLHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'tone'
       });
@@ -244,7 +244,7 @@ export class PromptEngine {
    */
   private async getTemplateSettings(): Promise<TemplateSettings> {
     try {
-      const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
+      const setting = await MySQLHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'template'
       });
@@ -273,7 +273,7 @@ export class PromptEngine {
    */
   private async getPromptSettings(): Promise<PromptSettings> {
     try {
-      const setting = await DynamoDBHelper.getItem(ENV.SETTINGS_TABLE, {
+      const setting = await MySQLHelper.getItem(ENV.SETTINGS_TABLE, {
         userId: this.userId,
         settingType: 'prompt'
       });
@@ -300,7 +300,7 @@ export class PromptEngine {
    */
   private async getPersonaProfile(): Promise<PersonaProfile | null> {
     try {
-      const profile = await DynamoDBHelper.getItem(ENV.PERSONA_PROFILES_TABLE, {
+      const profile = await MySQLHelper.getItem(ENV.PERSONA_PROFILES_TABLE, {
         userId: this.userId
       });
       
@@ -499,14 +499,10 @@ ${mixRatioDescription}`;
       const threeDaysAgo = new Date();
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
       
-      const recentDiaries = await DynamoDBHelper.scan<Diary>(
+      const recentDiaries = await MySQLHelper.scan<Diary>(
         ENV.DIARIES_TABLE,
-        'userId = :userId AND transcriptionStatus = :status AND createdAt >= :date',
-        {
-          ':userId': this.userId,
-          ':status': 'completed',
-          ':date': threeDaysAgo.toISOString()
-        },
+        'user_id = ? AND JSON_EXTRACT(diary_data, "$.transcriptionStatus") = ? AND created_at >= ?',
+        [this.userId, 'completed', threeDaysAgo.toISOString()],
         undefined,
         5 // 最大5件
       );
@@ -517,16 +513,16 @@ ${mixRatioDescription}`;
 
       // 日記内容を要約して文脈を生成
       const diaryTexts = recentDiaries
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .map(diary => diary.originalText)
-        .filter(text => text && text.trim().length > 0);
+        .sort((a: Diary, b: Diary) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((diary: Diary) => diary.originalText)
+        .filter((text: string | undefined) => text && text.trim().length > 0);
 
       if (diaryTexts.length === 0) {
         return '最近の日記はありません。';
       }
 
       // 最近の日記内容を要約
-      const recentContext = diaryTexts.slice(0, 3).map((text, index) => {
+      const recentContext = diaryTexts.slice(0, 3).map((text: string, index: number) => {
         const shortText = text.length > 100 ? text.substring(0, 100) + '...' : text;
         return `${index + 1}. ${shortText}`;
       }).join('\n');

@@ -1,7 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Settings } from '../../types';
 import { successResponse, errorResponse, internalServerErrorResponse, corsResponse, validationErrorResponse } from '../../libs/response';
-import { getPathParameter, getUserId, isValidSettingType, parseBody, validateRequired } from '../../libs/validation';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { getPathParameter, getUserId, isValidSettingType, parseBody } from '../../libs/validation';
+import { MySQLHelper } from '../../libs/mysql';
 import { ENV } from '../../libs/env';
 
 /**
@@ -49,7 +49,7 @@ export const handler = async (
         updatedAt: new Date().toISOString()
       };
 
-      await DynamoDBHelper.putItem(ENV.SETTINGS_TABLE, settingData);
+      await MySQLHelper.putItem(ENV.SETTINGS_TABLE, settingData);
 
       return successResponse(settingData);
     } catch (dbError) {

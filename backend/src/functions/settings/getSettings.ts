@@ -1,7 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Settings } from '../../types';
 import { successResponse, errorResponse, internalServerErrorResponse, corsResponse } from '../../libs/response';
 import { getPathParameter, getUserId, isValidSettingType } from '../../libs/validation';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { ENV } from '../../libs/env';
 
 /**
@@ -79,8 +79,8 @@ export const handler = async (
     const userId = getUserId(event);
 
     try {
-      // DynamoDB から設定を取得
-      const setting = await DynamoDBHelper.getItem<Settings>(
+      // MySQL から設定を取得
+      const setting = await MySQLHelper.getItem<Settings>(
         ENV.SETTINGS_TABLE,
         {
           userId,
@@ -104,7 +104,7 @@ export const handler = async (
         data: setting.data || {}
       });
     } catch (dbError) {
-      console.error('Error retrieving settings from DynamoDB:', dbError);
+      console.error('Error retrieving settings from MySQL:', dbError);
       return internalServerErrorResponse('Failed to retrieve settings');
     }
 
