@@ -48,7 +48,7 @@ output "ec2_private_ip" {
 
 output "elastic_ip" {
   description = "Elastic IP"
-  value       = module.compute.elastic_ip
+  value       = module.compute.public_ip
 }
 
 # RDS情報
@@ -86,12 +86,12 @@ output "s3_bucket_domain_name" {
 # アプリケーション接続情報
 output "application_url" {
   description = "アプリケーション URL"
-  value       = "http://${module.compute.elastic_ip}:${var.app_port}"
+  value       = "http://${module.compute.public_ip}:${var.app_port}"
 }
 
 output "ssh_connection" {
   description = "SSH接続コマンド"
-  value       = "ssh -i ~/.ssh/${var.key_name}.pem ubuntu@${module.compute.elastic_ip}"
+  value       = "ssh -i ~/.ssh/${var.key_name}.pem ubuntu@${module.compute.public_ip}"
 }
 
 # データベース接続情報
@@ -105,7 +105,7 @@ output "database_connection_string" {
 output "environment_summary" {
   description = "本番環境の構成サマリー"
   value = {
-    environment     = "production"
+    environment    = "production"
     region         = var.aws_region
     vpc_cidr       = var.vpc_cidr
     instance_type  = "t3.medium"

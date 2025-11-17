@@ -56,18 +56,19 @@ resource "aws_instance" "main" {
   })
 
   # インスタンス作成完了を待つ
-  provisioner "remote-exec" {
-    inline = [
-      "echo 'Instance is ready'"
-    ]
+  # プロビジョナーは一時的にコメントアウト（手動設定後に有効化）
+  # provisioner "remote-exec" {
+  #   inline = [
+  #     "echo 'Instance is ready'"
+  #   ]
 
-    connection {
-      type        = "ssh"
-      user        = "ubuntu"
-      private_key = file(var.private_key_path)
-      host        = self.public_ip
-    }
-  }
+  #   connection {
+  #     type        = "ssh"
+  #     user        = "ubuntu"
+  #     private_key = file(var.private_key_path)
+  #     host        = self.public_ip
+  #   }
+  # }
 }
 
 # Elastic IPをインスタンスに関連付け

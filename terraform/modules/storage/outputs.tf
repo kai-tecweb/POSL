@@ -40,7 +40,7 @@ output "versioning_status" {
 
 output "encryption_algorithm" {
   description = "暗号化アルゴリズム"
-  value       = aws_s3_bucket_server_side_encryption_configuration.main.rule[0].apply_server_side_encryption_by_default.sse_algorithm
+  value       = "AES256"
 }
 
 output "lifecycle_enabled" {

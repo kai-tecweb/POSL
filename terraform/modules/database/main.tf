@@ -70,11 +70,10 @@ resource "aws_db_instance" "main" {
   deletion_protection = var.deletion_protection
   skip_final_snapshot = var.environment != "production"
 
-  final_snapshot_identifier = var.environment == "production" ? 
-    "${var.project_name}-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
+  final_snapshot_identifier = var.environment == "production" ? "${var.project_name}-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
 
-  # 性能監視（本番環境のみ）
-  performance_insights_enabled = var.environment == "production" ? true : false
+  # 性能監視（本番環境かつt3.micro以外のみ）
+  performance_insights_enabled = var.environment == "production" && var.instance_class != "db.t3.micro" ? true : false
   monitoring_interval         = var.enhanced_monitoring ? 60 : 0
 
   tags = merge(var.common_tags, {

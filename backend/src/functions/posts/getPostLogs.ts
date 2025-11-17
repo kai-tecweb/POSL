@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, PostLog } from '../../types';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { successResponse, internalServerErrorResponse } from '../../libs/response';
 import { ENV } from '../../libs/env';
 
@@ -18,15 +18,11 @@ export const handler = async (
     // ページネーション設定
     const limit = Number(event.queryStringParameters?.['limit']) || 50;
 
-    // DynamoDBからデータを取得
-    const posts = await DynamoDBHelper.query<PostLog>(
-      ENV.POST_LOGS_TABLE,
-      'userId = :userId',
-      { ':userId': userId },
-      undefined, // indexName
-      undefined, // expressionAttributeNames
-      limit,
-      false // scanIndexForward (最新順)
+    // MySQLからデータを取得
+    const posts = await MySQLHelper.query<PostLog>(
+      'post_logs',
+      { userId: userId },
+      { limit, orderBy: { createdAt: 'DESC' } }
     );
 
     // レスポンス構築

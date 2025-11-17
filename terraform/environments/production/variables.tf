@@ -39,7 +39,13 @@ variable "key_name" {
 variable "ec2_allowed_cidr_blocks" {
   description = "EC2アクセス許可CIDR"
   type        = list(string)
-  default     = ["0.0.0.0/0"]  # 本番環境では特定のIPに制限することを推奨
+  default     = ["0.0.0.0/0"] # 本番環境では特定のIPに制限することを推奨
+}
+
+variable "private_key_path" {
+  description = "SSH接続用秘密鍵のパス"
+  type        = string
+  default     = "/home/iwasaki/.ssh/posl-production-key.pem"
 }
 
 # アプリケーション設定
@@ -89,7 +95,7 @@ variable "db_password" {
 variable "db_multi_az" {
   description = "Multi-AZ配置（本番環境では true を推奨）"
   type        = bool
-  default     = false  # コスト削減のため false、必要に応じて true に変更
+  default     = false # コスト削減のため false、必要に応じて true に変更
 }
 
 variable "db_backup_retention_period" {
@@ -119,7 +125,7 @@ variable "db_deletion_protection" {
 variable "db_enhanced_monitoring" {
   description = "拡張監視"
   type        = bool
-  default     = false  # コスト削減のため false
+  default     = false # コスト削減のため false
 }
 
 # S3設定
@@ -155,7 +161,7 @@ variable "s3_glacier_days" {
 variable "s3_expiration_days" {
   description = "オブジェクトを削除する日数"
   type        = number
-  default     = 2555  # 約7年
+  default     = 2555 # 約7年
 }
 
 variable "s3_cors_enabled" {
@@ -167,7 +173,7 @@ variable "s3_cors_enabled" {
 variable "s3_cors_allowed_origins" {
   description = "CORS許可オリジン"
   type        = list(string)
-  default     = ["*"]  # 本番環境では特定のドメインに制限することを推奨
+  default     = ["*"] # 本番環境では特定のドメインに制限することを推奨
 }
 
 # 外部API設定

@@ -102,6 +102,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
     id     = "incomplete_multipart_upload_deletion"
     status = "Enabled"
 
+    filter {}
+
     abort_incomplete_multipart_upload {
       days_after_initiation = 1
     }

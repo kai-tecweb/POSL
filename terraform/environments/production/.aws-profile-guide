@@ -1,0 +1,30 @@
+# Terraform AWS Profile 設定ガイド
+# 複数のAWSアクセスキーでTerraformを実行するための設定
+
+## 1. プロファイル一覧確認
+# /home/iwasaki/work/POSL/scripts/aws-profile-manager.sh list
+
+## 2. 新しいプロファイル追加 (必要に応じて)
+# /home/iwasaki/work/POSL/scripts/aws-profile-manager.sh add posl-terraform YOUR_ACCESS_KEY YOUR_SECRET_KEY
+
+## 3. プロファイルの権限テスト
+# /home/iwasaki/work/POSL/scripts/aws-profile-manager.sh test posl-terraform
+
+## 4. Terraform実行用プロファイル設定
+# source /home/iwasaki/work/POSL/scripts/aws-profile-manager.sh terraform posl-terraform
+
+## 5. Terraform実行
+# terraform plan
+# terraform apply
+
+# === 現在利用可能なプロファイル ===
+# default       : posl-dev-local-user (権限制限あり)
+# posl-admin    : 管理者権限用 (設定待ち)
+# posl-terraform: Terraform専用 (設定待ち)
+# posl-ci-cd    : CI/CD用 (設定待ち)
+
+# === 環境変数での直接設定方法 ===
+# export AWS_PROFILE=posl-terraform
+# export AWS_ACCESS_KEY_ID=AKIAXXXXXXXXXXXXX
+# export AWS_SECRET_ACCESS_KEY=your-secret-access-key
+# export AWS_DEFAULT_REGION=ap-northeast-1
