@@ -136,6 +136,34 @@ MYSQL_DATABASE=posl_db
 
 ## 🎉 Phase 6-3 追加実装完了 (2025年11月17日)
 
+### ErrorLogMonitor機能実装 ✅
+#### 新規ファイル
+- `frontend/src/components/ErrorLogMonitor.tsx` - エラーログ監視UI
+- `backend/src/functions/errorLogs/getErrorLogs.ts` - ログ取得API
+- `backend/src/functions/errorLogs/clearErrorLogs.ts` - ログクリアAPI
+- `backend/src/libs/error-logger.ts` - 統一エラーロギング
+- `frontend/src/utils/api.ts` - errorLogsAPI追加
+
+#### 実装機能
+1. **リアルタイム監視** - 30秒間隔で自動更新
+2. **詳細モーダル** - エラー詳細情報をJSON形式で表示
+3. **レベル分類** - Error/Warning/Info の視覚的区別
+4. **クリア機能** - 一括エラーログ削除
+5. **フォールバック** - API接続失敗時のモックデータ表示
+
+#### 技術仕様
+- **フロントエンド**: TypeScript + React Hooks + Tailwind CSS
+- **バックエンド**: AWS Lambda + DynamoDB（ローカル対応）
+- **API**: REST API (`GET /errors/logs`, `DELETE /errors/logs`)
+
+```typescript
+// エラーロガー使用例
+import { errorLogger } from '../libs/error-logger'
+
+errorLogger.error('API呼び出しに失敗', 'userService', { statusCode: 500 })
+errorLogger.warning('遅延発生', 'database', { responseTime: '3.5s' })
+```
+
 ### PromptEngine MySQL統合 ✅
 #### 実装内容
 1. **PromptEngineクラス完全移行**
@@ -193,6 +221,7 @@ MYSQL_DATABASE=posl_db
 - ✅ **MySQLHelper実装完了** - DynamoDB完全互換API
 - ✅ **並行運用環境構築** - DynamoDB + MySQL 同時稼働
 - ✅ **PromptEngine MySQL統合完了** - コア機能移行済み
+- ✅ **ErrorLogMonitor実装完了** - システム監視・エラーログ機能
 - ✅ **TypeScript設定最適化** - ビルドエラー完全解消
 - ✅ **API動作確認** - Serverless環境でのMySQL動作確認
 

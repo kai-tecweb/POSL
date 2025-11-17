@@ -24,15 +24,16 @@ POSLは「あなたの分身が書いたような、自然で前向きなX投稿
 - [x] **MySQL開発環境構築完了**（Docker + MySQL 8.0）
 - [x] **MySQLHelper実装完了**（DynamoDB互換API・動作テスト済み）
 
-### 🔄 Phase 6: アーキテクチャ移行フェーズ (進行中 - Week 1-2完了)
+### 🔄 Phase 6: アーキテクチャ移行フェーズ (進行中 - Week 3完了)
 - [x] **MySQL基盤構築完了**（スキーマ設計・初期化・テスト）
 - [x] **MySQLHelper実装完了**（DynamoDB完全互換）
-- [ ] **PromptEngine MySQL対応**（Week 3-5予定）
-- [ ] **Express.js統合API実装**（Week 6-8予定）
-- [ ] **本番環境構築・移行**（Week 9-12予定）
+- [x] **PromptEngine MySQL統合完了**（17テストケース確認済み）
+- [x] **ErrorLogMonitor実装完了**（システム監視・エラー管理）
+- [ ] **Express.js統合API実装**（Week 4-6予定）
+- [ ] **本番環境構築・移行**（Week 7-12予定）
 
-**移行進捗**: Week 1-2完了（25%進行中）  
-**期間**: 12週間（2025年11月18日〜2025年2月13日）
+**移行進捗**: Week 3完了（40%進行中）  
+**期間**: 12週間（2025年11月17日〜2025年2月13日）
 
 ## 🛠 技術スタック
 
@@ -72,7 +73,6 @@ POSL/
 ### 前提条件
 - Docker & Docker Compose
 - Node.js 18.x
-- AWS CLI
 - MySQL Client (開発用)
 
 ### ローカル開発環境
@@ -83,9 +83,9 @@ git clone <repository-url>
 cd POSL
 ```
 
-2. Docker環境起動（MySQL + その他サービス）
+2. Docker環境起動（MySQL + DynamoDB + MinIO）
 ```bash
-docker-compose up -d
+docker-compose up -d mysql dynamodb-local minio
 ```
 
 3. フロントエンド開発サーバー起動
@@ -93,9 +93,36 @@ docker-compose up -d
 cd frontend
 npm install
 npm run dev
+# http://localhost:3000
 ```
 
-4. バックエンド開発環境（Express.js）
+4. バックエンド開発環境（Serverless Offline）
+```bash
+cd backend
+npm install
+npm run build
+./scripts/dev-server.sh start
+# http://localhost:3001
+```
+
+### 🔍 開発環境の動作確認
+
+```bash
+# MySQL接続確認
+cd backend && node test-mysql-connection.js
+
+# API動作確認
+curl http://localhost:3001/local/settings/tone
+
+# エラーログAPI確認 (NEW)
+curl http://localhost:3001/local/errors/logs
+```
+
+### 📊 監視機能
+
+- **エラーログ監視**: Dashboard → ErrorLogMonitorで確認
+- **投稿ステータス監視**: Dashboard → PostStatusMonitorで確認
+- **API接続状況**: 各設定画面で接続テスト実行可能
 ```bash
 cd backend
 npm install

@@ -21,6 +21,7 @@ custom:
     postLogs: posl-post-logs-${self:custom.tableSuffix}
     diaries: posl-diaries-${self:custom.tableSuffix}
     personaProfiles: posl-persona-profiles-${self:custom.tableSuffix}
+    errorLogs: posl-error-logs-${self:custom.tableSuffix}
   
   # S3 バケット名
   buckets:
@@ -44,11 +45,19 @@ provider:
     POST_LOGS_TABLE: ${self:custom.tables.postLogs}
     DIARIES_TABLE: ${self:custom.tables.diaries}
     PERSONA_PROFILES_TABLE: ${self:custom.tables.personaProfiles}
+    ERROR_LOGS_TABLE: ${self:custom.tables.errorLogs}
     AUDIO_BUCKET: ${self:custom.buckets.audio}
     NODE_ENV: ${self:custom.stage}
     AWS_ENDPOINT_URL: ${opt:aws-endpoint-url, ''}
     AWS_ACCESS_KEY_ID: ${opt:aws-access-key-id, 'local'}
     AWS_SECRET_ACCESS_KEY: ${opt:aws-secret-access-key, 'local'}
+    # MySQL 設定
+    MYSQL_HOST: ${env:MYSQL_HOST, 'localhost'}
+    MYSQL_PORT: ${env:MYSQL_PORT, '3307'}
+    MYSQL_USER: ${env:MYSQL_USER, 'root'}
+    MYSQL_PASSWORD: ${env:MYSQL_PASSWORD, 'posl_password'}
+    MYSQL_DATABASE: ${env:MYSQL_DATABASE, 'posl_db'}
+    DEFAULT_USER_ID: ${env:DEFAULT_USER_ID, 'demo'}
 
 plugins:
   - serverless-offline
@@ -138,6 +147,23 @@ functions:
       - http:
           path: /trends/fetch
           method: get
+          cors: true
+
+  # エラーログ API
+  getErrorLogs:
+    handler: dist/functions/errorLogs/getErrorLogs.handler
+    events:
+      - http:
+          path: /errors/logs
+          method: get
+          cors: true
+
+  clearErrorLogs:
+    handler: dist/functions/errorLogs/clearErrorLogs.handler
+    events:
+      - http:
+          path: /errors/logs
+          method: delete
           cors: true
 
 resources:

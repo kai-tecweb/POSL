@@ -87,7 +87,7 @@ export const getBearerToken = (event: APIGatewayProxyEvent): string => {
  */
 export const getUserId = (_event: APIGatewayProxyEvent): string => {
   // 現在は固定値、将来的にはJWTトークンから取得
-  return 'default-user';
+  return 'demo';
 };
 
 /**

@@ -124,6 +124,33 @@ Resources:
         - Key: Stage
           Value: ${self:custom.stage}
 
+  ErrorLogsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: IsNotLocal
+    Properties:
+      TableName: ${self:custom.tables.errorLogs}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: timestamp-index
+          KeySchema:
+            - AttributeName: timestamp
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Service
+          Value: ${self:service}
+        - Key: Stage
+          Value: ${self:custom.stage}
+
   # S3 バケット
   AudioBucket:
     Type: AWS::S3::Bucket

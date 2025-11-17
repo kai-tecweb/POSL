@@ -69,3 +69,24 @@ export const postsAPI = {
     return response.json()
   }
 }
+
+// API utility functions for error logs
+export const errorLogsAPI = {
+  async getErrorLogs(limit: number = 10) {
+    const response = await fetch(`${API_BASE_URL}/errors/logs?limit=${limit}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch error logs')
+    }
+    return response.json()
+  },
+
+  async clearErrorLogs() {
+    const response = await fetch(`${API_BASE_URL}/errors/logs`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error('Failed to clear error logs')
+    }
+    return response.json()
+  }
+}

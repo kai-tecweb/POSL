@@ -14,8 +14,8 @@ const createMySQLPool = () => {
     charset: 'utf8mb4',
     connectionLimit: 10,
     acquireTimeout: 60000,
-    timeout: 60000,
-    reconnect: true
+    multipleStatements: true,
+    namedPlaceholders: true
   };
 
   // 本番環境の場合のみSSL設定を追加
@@ -430,7 +430,7 @@ export class MySQLHelper {
           return {
             userId: row.user_id,
             settingType: row.setting_type,
-            ...settingData
+            data: settingData
           };
           
         case 'post_logs':
