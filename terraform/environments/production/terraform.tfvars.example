@@ -1,0 +1,51 @@
+# Terraform変数設定ファイル（本番環境）
+# このファイルをコピーして terraform.tfvars として使用してください
+
+# 基本設定
+aws_region   = "ap-northeast-1"
+project_name = "posl"
+
+# EC2設定
+key_name = "your-key-pair-name"  # 既存のキーペア名に変更してください
+
+# 本番環境では特定のIPアドレスからのアクセスのみ許可することを強く推奨します
+ec2_allowed_cidr_blocks = [
+  "0.0.0.0/0"  # すべてのIPからのアクセスを許可（セキュリティリスクあり）
+  # "123.456.789.0/24"  # 例：特定のオフィスネットワークからのみ許可
+]
+
+# データベース設定
+db_password = "your-secure-password"  # 強力なパスワードに変更してください
+
+# 本番環境ではMulti-AZを有効にすることを推奨（追加コストが発生します）
+db_multi_az = false  # 高可用性が必要な場合は true に変更
+
+# 本番環境では削除保護を有効にすることを強く推奨します
+db_deletion_protection = true
+
+# S3設定
+s3_bucket_name = "posl-audio-storage-production-unique-name"  # グローバルで一意の名前に変更してください
+
+# 本番環境では特定のドメインのみ許可することを推奨します
+s3_cors_allowed_origins = [
+  "*"  # すべてのオリジンからのアクセスを許可（セキュリティリスクあり）
+  # "https://yourdomain.com"  # 例：特定のドメインからのみ許可
+]
+
+# 外部API設定
+openai_api_key = "your-openai-api-key"  # OpenAI API キーを設定してください
+
+# X (Twitter) API認証情報
+x_api_credentials = {
+  consumer_key        = "your-consumer-key"
+  consumer_secret     = "your-consumer-secret"
+  access_token        = "your-access-token"
+  access_token_secret = "your-access-token-secret"
+}
+
+# 高度な設定（必要に応じて調整）
+db_backup_retention_period = 7      # バックアップ保持期間（日）
+db_enhanced_monitoring    = false   # 拡張監視（追加コストが発生）
+s3_ia_days               = 30      # IA移行日数
+s3_glacier_days          = 90      # Glacier移行日数
+s3_expiration_days       = 2555    # 削除日数（約7年）
