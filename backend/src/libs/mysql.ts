@@ -421,11 +421,15 @@ export class MySQLHelper {
         
       case 'post_logs':
         const { userId: postUserId, postId, id, ...postData } = item;
+        // undefinedプロパティを削除
+        const cleanPostData = Object.fromEntries(
+          Object.entries(postData).filter(([_, value]) => value !== undefined)
+        );
         return {
-          user_id: postUserId || postData.userId,
+          user_id: postUserId || cleanPostData.userId,
           post_id: postId || id, // idをpost_idとして使用
           timestamp: item.timestamp,
-          post_data: JSON.stringify(postData)
+          post_data: JSON.stringify(cleanPostData)
           // created_atはDEFAULT_GENERATEDのため除外
         };
         
