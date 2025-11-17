@@ -41,6 +41,26 @@ const mysqlPool = createMySQLPool();
 export class MySQLHelper {
   
   /**
+   * ISO文字列をMySQLのDATETIME形式に変換
+   */
+  private static formatDateTime(isoString: string | null | undefined): string | null {
+    if (!isoString) return null;
+    
+    try {
+      // ISO文字列をDateオブジェクトに変換
+      const date = new Date(isoString);
+      
+      // MySQL DATETIME形式 (YYYY-MM-DD HH:MM:SS) に変換
+      return date.toISOString()
+        .replace('T', ' ')
+        .replace(/\.\d{3}Z$/, '');
+    } catch (error) {
+      console.warn('Invalid date format:', isoString);
+      return null;
+    }
+  }
+  
+  /**
    * テーブル名をMySQLの命名規則に変換
    */
   private static normalizeTableName(tableName: string): string {
@@ -51,18 +71,24 @@ export class MySQLHelper {
       'posl-dev-postLogs': 'post_logs',
       'posl-dev-diaries': 'diaries',
       'posl-dev-personaProfiles': 'persona_profiles',
+      'posl-dev-errorLogs': 'error_logs',
       // ローカル環境用
       'posl-users-local': 'users',
       'posl-settings-local': 'settings',
       'posl-post-logs-local': 'post_logs',
       'posl-diaries-local': 'diaries',
       'posl-persona-profiles-local': 'persona_profiles',
+      'posl-error-logs-local': 'error_logs',
       // 短縮形
       'Users': 'users',
       'Settings': 'settings',
       'PostLogs': 'post_logs', 
       'Diaries': 'diaries',
-      'PersonaProfiles': 'persona_profiles'
+      'PersonaProfiles': 'persona_profiles',
+      'ErrorLogs': 'error_logs',
+      // 直接名
+      'post_logs': 'post_logs',
+      'error_logs': 'error_logs'
     };
     
     return tableMap[tableName] || tableName;
@@ -85,12 +111,25 @@ export class MySQLHelper {
         return { where: 'WHERE user_id = ? AND setting_type = ?', values };
         
       case 'post_logs':
-        values.push(key['userId'], key['postId']);
-        return { where: 'WHERE user_id = ? AND post_id = ?', values };
+        if (key['id']) {
+          values.push(key['id']);
+          return { where: 'WHERE id = ?', values };
+        } else {
+          values.push(key['userId'], key['postId']);
+          return { where: 'WHERE user_id = ? AND post_id = ?', values };
+        }
         
       case 'diaries':
         values.push(key['userId'], key['diaryId']);
         return { where: 'WHERE user_id = ? AND diary_id = ?', values };
+        
+      case 'error_logs':
+        if (key['id']) {
+          values.push(key['id']);
+          return { where: 'WHERE id = ?', values };
+        } else {
+          throw new Error('error_logs table requires id field');
+        }
         
       default:
         throw new Error(`Unsupported table for key conversion: ${tableName}`);
@@ -378,12 +417,14 @@ export class MySQLHelper {
         };
         
       case 'post_logs':
-        const { userId: postUserId, postId, ...postData } = item;
+        const { userId: postUserId, postId, id, ...postData } = item;
         return {
-          user_id: postUserId,
-          post_id: postId,
+          user_id: postUserId || postData.userId,
+          post_id: postId || id, // idをpost_idとして使用
           timestamp: item.timestamp,
-          post_data: JSON.stringify(postData)
+          post_data: JSON.stringify(postData),
+          created_at: this.formatDateTime(item.created_at || item.timestamp),
+          updated_at: this.formatDateTime(item.updated_at || item.timestamp)
         };
         
         case 'diaries':
@@ -400,6 +441,18 @@ export class MySQLHelper {
           user_id: personaUserId,
           persona_data: JSON.stringify(personaData),
           analysis_summary: item.analysisSummary || ''
+        };
+        
+      case 'error_logs':
+        return {
+          id: item.id,
+          timestamp: item.timestamp,
+          level: item.level,
+          message: item.message,
+          source: item.source,
+          details: typeof item.details === 'string' ? item.details : JSON.stringify(item.details || {}),
+          created_at: this.formatDateTime(item.timestamp),
+          updated_at: this.formatDateTime(item.timestamp)
         };
         
       default:
@@ -438,6 +491,7 @@ export class MySQLHelper {
             ? JSON.parse(row.post_data)
             : row.post_data;
           return {
+            id: row.post_id, // post_idをidとして使用
             userId: row.user_id,
             postId: row.post_id,
             timestamp: row.timestamp,
@@ -457,6 +511,19 @@ export class MySQLHelper {
           return {
             userId: row.user_id,
             ...personaData
+          };
+          
+        case 'error_logs':
+          const details = typeof row.details === 'string'
+            ? (row.details.startsWith('{') || row.details.startsWith('[') ? JSON.parse(row.details) : row.details)
+            : row.details;
+          return {
+            id: row.id,
+            timestamp: row.timestamp,
+            level: row.level,
+            message: row.message,
+            source: row.source,
+            details: details
           };
           
         default:

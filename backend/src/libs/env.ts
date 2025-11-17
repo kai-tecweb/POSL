@@ -68,6 +68,19 @@ export const ENV = {
   MYSQL_PASSWORD: getEnvVar('MYSQL_PASSWORD', 'password'),
   MYSQL_DATABASE: getEnvVar('MYSQL_DATABASE', 'posl_db'),
   
+  // 追加API設定（Phase 7用）
+  GOOGLE_TRENDS_API_KEY: getEnvVar('GOOGLE_TRENDS_API_KEY', 'dummy_google_trends_key'),
+  YAHOO_TRENDS_API_KEY: getEnvVar('YAHOO_TRENDS_API_KEY', 'dummy_yahoo_trends_key'),
+  WHISPER_API_KEY: getEnvVar('WHISPER_API_KEY', 'dummy_whisper_key'),
+  
+  // AWS Services設定
+  AWS_S3_BUCKET_NAME: getEnvVar('AWS_S3_BUCKET_NAME', 'posl-audio-files-dev'),
+  AWS_CLOUDWATCH_LOG_GROUP: getEnvVar('AWS_CLOUDWATCH_LOG_GROUP', 'posl-logs-dev'),
+  
+  // 開発・デバッグ用設定
+  DEBUG_MODE: getEnvVarAsBoolean('DEBUG_MODE', false),
+  LOG_LEVEL: getEnvVar('LOG_LEVEL', 'info'),
+  
   // その他
   NODE_ENV: getEnvVar('NODE_ENV', 'development'),
 } as const;

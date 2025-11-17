@@ -119,6 +119,16 @@ functions:
               paths:
                 postId: true
 
+
+  postTweet:
+    handler: dist/functions/posts/postTweet.postTweet
+    events:
+      - http:
+          path: /post/tweet
+          method: post
+          cors: true
+
+
   testPost:
     handler: dist/functions/posts/testPost.handler
     events:
@@ -149,6 +159,35 @@ functions:
       - http:
           path: /trends/fetch
           method: get
+          cors: true
+
+  getGoogleTrends:
+    handler: dist/functions/trends/getGoogleTrends.getGoogleTrends
+    timeout: 30
+    events:
+      - http:
+          path: /trends/google
+          method: get
+          cors: true
+
+  getYahooTrends:
+    handler: dist/functions/trends/getYahooTrends.getYahooTrends
+    timeout: 30
+    events:
+      - http:
+          path: /trends/yahoo
+          method: get
+          cors: true
+
+  # 音声日記機能
+  transcribeAudio:
+    handler: dist/functions/diary/transcribeAudio.transcribeAudio
+    timeout: 60
+    memorySize: 1024
+    events:
+      - http:
+          path: /diary/transcribe
+          method: post
           cors: true
 
   # エラーログ API

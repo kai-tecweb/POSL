@@ -3,7 +3,8 @@ import { successResponse, internalServerErrorResponse } from '../../libs/respons
 import { PromptEngine } from '../../libs/prompt-engine';
 import { OpenAIHelper } from '../../libs/openai';
 import { XHelper } from '../../libs/x-api';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
+import { errorLogger } from '../../libs/error-logger';
 import { ENV } from '../../libs/env';
 
 /**
@@ -48,7 +49,7 @@ async function retryWithBackoff<T>(
 }
 
 /**
- * 投稿ステータスを更新する関数
+ * 投稿ステータスを更新する関数（MySQL版）
  */
 async function updatePostStatus(
   userId: string,
@@ -58,36 +59,46 @@ async function updatePostStatus(
   result?: any
 ): Promise<void> {
   try {
-    let updateExpression = 'SET #status = :status, updatedAt = :updatedAt';
-    const expressionAttributeNames: any = {
-      '#status': 'status'
-    };
-    const expressionAttributeValues: any = {
-      ':status': status,
-      ':updatedAt': new Date().toISOString()
+    // 既存の投稿ログを取得（MySQLの複合キーを使用）
+    const existingLog = await MySQLHelper.getItem('post_logs', { 
+      userId: userId, 
+      postId: postId 
+    });
+    
+    if (!existingLog) {
+      throw new Error(`Post log not found: userId=${userId}, postId=${postId}`);
+    }
+
+    // 更新データを準備（型を明示的にany指定）
+    const updatedLog: any = {
+      ...existingLog,
+      status,
+      updated_at: new Date().toISOString()
     };
     
     if (error) {
-      updateExpression += ', #error = :error';
-      expressionAttributeNames['#error'] = 'error';
-      expressionAttributeValues[':error'] = error;
+      updatedLog.error_message = error;
     }
     
     if (result) {
-      updateExpression += ', #result = :result';
-      expressionAttributeNames['#result'] = 'result';
-      expressionAttributeValues[':result'] = result;
+      updatedLog.result = JSON.stringify(result);
     }
-    
-    await DynamoDBHelper.updateItem(
-      ENV.POST_LOGS_TABLE,
-      { userId, postId },
-      updateExpression,
-      expressionAttributeValues,
-      expressionAttributeNames
-    );
+
+    // MySQLHelperのputItemで更新
+    await MySQLHelper.putItem('post_logs', updatedLog);
+
   } catch (updateError) {
     console.error('Failed to update post status:', updateError);
+    await errorLogger.error(
+      '投稿ステータス更新失敗',
+      'updatePostStatus',
+      {
+        userId,
+        postId,
+        status,
+        error: updateError instanceof Error ? updateError.message : 'Unknown error'
+      }
+    );
   }
 }
 
@@ -140,14 +151,29 @@ export const handler = async (
     if (event.source === 'aws.events') {
       userId = event.detail?.userId || 'default-user';
     } else {
-      userId = event.headers?.['X-User-Id'] || 'default-user';
+      const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+      userId = body?.userId || event.headers?.['X-User-Id'] || 'default-user';
     }
     
     // 投稿IDの生成
     postId = generateUUID().replace(/-/g, '');
     
-    // 初期ステータスをpendingで作成
-    await updatePostStatus(userId, postId, 'pending');
+    // 初期投稿ログをMySQLに作成
+    const initialPostLog = {
+      userId: userId,
+      postId: postId,
+      status: 'pending',
+      content: '',
+      timestamp: new Date().toISOString(),
+      xPostId: '',
+      prompt: '',
+      trendData: null,
+      success: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await MySQLHelper.putItem('post_logs', initialPostLog);
 
     // processingステータスに更新
     await updatePostStatus(userId, postId, 'processing');
@@ -181,8 +207,8 @@ export const handler = async (
     let xPostId: string | undefined;
     let postResult: any = null;
 
-    // 実際にX（旧Twitter）に投稿するかチェック
-    const shouldPost = ENV.NODE_ENV === 'production';
+    // 実際にX（旧Twitter）に投稿するかチェック（開発環境でもテスト可能）
+    const shouldPost = ENV.NODE_ENV === 'production' || ENV.NODE_ENV === 'development';
     
     if (shouldPost) {
       try {
@@ -211,7 +237,7 @@ export const handler = async (
     // プロンプトを結合してログ用に保存
     const fullPrompt = `System: ${system}\n\nUser: ${user}`;
 
-    // 投稿ログをDynamoDBに保存
+    // 投稿ログをMySQLに保存
     const postLog: PostLog = {
       userId,
       postId,
@@ -224,7 +250,7 @@ export const handler = async (
       ...(xPostId ? {} : { error: shouldPost ? 'X posting failed' : 'Posting disabled for non-production' })
     };
 
-    await DynamoDBHelper.putItem(ENV.POST_LOGS_TABLE, postLog);
+    await MySQLHelper.putItem('post_logs', postLog);
 
     // 成功ステータスに更新
     await updatePostStatus(

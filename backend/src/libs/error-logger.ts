@@ -1,14 +1,5 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb'
+import { MySQLHelper } from './mysql'
 import { v4 as uuidv4 } from 'uuid'
-
-const dynamoDbClient = new DynamoDBClient({ 
-  region: process.env.REGION || 'ap-northeast-1',
-  ...(process.env.STAGE === 'local' && {
-    endpoint: 'http://localhost:8000'
-  })
-})
-const docClient = DynamoDBDocumentClient.from(dynamoDbClient)
 
 export interface ErrorLog {
   id?: string
@@ -20,7 +11,7 @@ export interface ErrorLog {
 }
 
 /**
- * エラーログをDynamoDBに保存
+ * エラーログをMySQLに保存
  */
 export const logError = async (errorLog: ErrorLog): Promise<void> => {
   try {
@@ -30,15 +21,11 @@ export const logError = async (errorLog: ErrorLog): Promise<void> => {
       level: errorLog.level,
       message: errorLog.message,
       source: errorLog.source,
-      ...(errorLog.details && { details: errorLog.details })
+      ...(errorLog.details && { details: JSON.stringify(errorLog.details) })
     }
 
-    const params = {
-      TableName: process.env.ERROR_LOGS_TABLE,
-      Item: logEntry
-    }
-
-    await docClient.send(new PutCommand(params))
+    // MySQLのerror_logsテーブルに保存
+    await MySQLHelper.putItem('error_logs', logEntry)
     console.log('Error log saved successfully:', logEntry.id)
   } catch (error) {
     // エラーログの保存に失敗してもアプリケーションは継続
