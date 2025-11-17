@@ -21,7 +21,7 @@ const createMySQLPool = () => {
     return mysql.createPool({
       ...baseConfig,
       ssl: {
-        rejectUnauthorized: true
+        rejectUnauthorized: false  // RDS自己署名証明書のため
       }
     });
   } else {
