@@ -425,9 +425,8 @@ export class MySQLHelper {
           user_id: postUserId || postData.userId,
           post_id: postId || id, // idをpost_idとして使用
           timestamp: item.timestamp,
-          post_data: JSON.stringify(postData),
-          created_at: this.formatDateTime(item.created_at || item.timestamp)
-          // updated_atカラムは存在しないため除外
+          post_data: JSON.stringify(postData)
+          // created_atはDEFAULT_GENERATEDのため除外
         };
         
         case 'diaries':
