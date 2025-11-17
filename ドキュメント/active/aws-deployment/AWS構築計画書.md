@@ -29,14 +29,14 @@
 
 ```
 現在: Lambda + DynamoDB + API Gateway (Serverless)
-移行後: EC2 + RDS MySQL + ALB (Traditional)
+移行後: EC2 + RDS MySQL (Traditional, 将来ALB追加可能)
 ```
 
 ### 構築完了目標
 
 - **稼働率**: 99.9% (月間43分以内のダウンタイム)
 - **応答時間**: API平均応答時間 < 500ms
-- **セキュリティ**: WAF + VPC + 暗号化による多層防御
+- **セキュリティ**: VPC + セキュリティグループ + 暗号化による多層防御（将来WAF追加可能）
 - **監視**: CloudWatch + SNSによる24時間監視体制
 
 ---
@@ -343,9 +343,10 @@ Publicly Accessible: 無効
 
 #### 2. データベース環境
 - [x] MySQL 8.0 RDSインスタンス
-- [x] Multi-AZ構成による高可用性
+- [x] シングルAZ構成 + 自動バックアップによる復旧性
 - [x] 自動バックアップ (7日間保持)
 - [x] 暗号化 (保存時・転送時)
+- [x] 将来的なMulti-AZ構成移行に対応
 
 #### 3. ファイルストレージ
 - [x] S3バケット (音声ファイル保存)
@@ -355,8 +356,8 @@ Publicly Accessible: 無効
 #### 4. ネットワーク・セキュリティ
 - [x] VPC・サブネット構成
 - [x] セキュリティグループ設定  
-- [x] WAF設定 (DDoS・SQLインジェクション防御)
 - [x] SSL/TLS証明書 (ACM)
+- [ ] 将来的なWAF設定追加 (DDoS・SQLインジェクション防御)
 
 #### 5. 監視・ログ
 - [x] CloudWatch監視設定
@@ -586,18 +587,18 @@ echo "✅ Data migration completed!"
 
 set -e
 
-ALB_DNS=$(terraform output -raw alb_dns_name)
-HEALTH_ENDPOINT="https://$ALB_DNS/health"
+EC2_PUBLIC_IP=$(terraform output -raw ec2_public_ip)
+HEALTH_ENDPOINT="http://$EC2_PUBLIC_IP/health"
 
 echo "🩺 Running health checks..."
 
-# 1. ALB Health Check
-echo "📡 Checking ALB endpoint..."
+# 1. EC2 Application Health Check
+echo "📡 Checking EC2 application endpoint..."
 response=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_ENDPOINT)
 if [ $response = "200" ]; then
-  echo "✅ ALB health check passed"
+  echo "✅ EC2 application health check passed"
 else
-  echo "❌ ALB health check failed (HTTP $response)"
+  echo "❌ EC2 application health check failed (HTTP $response)"
   exit 1
 fi
 
