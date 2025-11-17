@@ -4,6 +4,7 @@ import { PromptEngine } from '../../libs/prompt-engine';
 import { OpenAIHelper } from '../../libs/openai';
 import { XHelper } from '../../libs/x-api';
 import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { ENV } from '../../libs/env';
 
 /**
@@ -88,7 +89,7 @@ export const handler = async (
       ...(xPostId ? {} : { error: 'Posting disabled or failed' })
     };
 
-    await DynamoDBHelper.putItem(ENV.POST_LOGS_TABLE, postLog);
+    await MySQLHelper.putItem(ENV.POST_LOGS_TABLE, postLog);
 
     // レスポンス
     const response = {

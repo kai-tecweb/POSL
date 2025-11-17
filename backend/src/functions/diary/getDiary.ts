@@ -1,6 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Diary } from '../../types';
 import { successResponse, errorResponse, internalServerErrorResponse, notFoundResponse } from '../../libs/response';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { S3Helper } from '../../libs/s3';
 import { ENV } from '../../libs/env';
 
@@ -18,7 +18,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     // 日記エントリーを取得
-    const diary = await DynamoDBHelper.getItem(ENV.DIARIES_TABLE, {
+    const diary = await MySQLHelper.getItem(ENV.DIARIES_TABLE, {
       userId,
       diaryId
     }) as Diary | null;

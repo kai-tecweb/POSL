@@ -13,9 +13,7 @@ const createMySQLPool = () => {
     database: ENV.MYSQL_DATABASE || 'posl_db',
     charset: 'utf8mb4',
     connectionLimit: 10,
-    acquireTimeout: 60000,
-    multipleStatements: true,
-    namedPlaceholders: true
+    multipleStatements: false
   };
 
   // 本番環境の場合のみSSL設定を追加
@@ -301,40 +299,45 @@ export class MySQLHelper {
     try {
       const table = this.normalizeTableName(tableName);
       
-      let whereClause = '';
-      let whereValues: any[] = [];
+      // シンプルなクエリ構築
+      let query = `SELECT * FROM ${table}`;
+      let queryValues: any[] = [];
       
-      // より簡単なフィルタ処理：直接MySQLクエリを使用
-      if (filterExpression) {
-        if (expressionAttributeValues && Object.keys(expressionAttributeValues).length > 0) {
-          // DynamoDB形式の場合の変換
-          if (filterExpression.includes(':')) {
-            const { whereClause: filter, whereValues: values } = this.parseFilterExpression(
-              table, filterExpression, expressionAttributeValues, expressionAttributeNames
-            );
-            whereClause = `WHERE ${filter}`;
-            whereValues = values;
-          } else {
-            // MySQL形式の場合
-            whereClause = `WHERE ${filterExpression}`;
-            whereValues = Object.values(expressionAttributeValues);
-          }
-        } else {
-          // フィルタのみの場合
-          whereClause = `WHERE ${filterExpression}`;
+      // フィルタ条件がある場合
+      if (filterExpression && expressionAttributeValues) {
+        // DynamoDB形式をMySQLに変換する簡単な処理
+        let whereClause = filterExpression;
+        
+        // :value形式を?に置き換え
+        const valueKeys = Object.keys(expressionAttributeValues);
+        valueKeys.forEach(key => {
+          whereClause = whereClause.replace(key, '?');
+          queryValues.push(expressionAttributeValues[key]);
+        });
+        
+        // 属性名置き換え（必要な場合）
+        if (expressionAttributeNames) {
+          Object.entries(expressionAttributeNames).forEach(([placeholder, actualName]) => {
+            whereClause = whereClause.replace(new RegExp(placeholder, 'g'), actualName);
+          });
         }
+        
+        query += ` WHERE ${whereClause}`;
       }
       
-      const limitClause = limit ? `LIMIT ${limit}` : '';
-      const query = `SELECT * FROM ${table} ${whereClause} ${limitClause}`;
+      // LIMIT句
+      if (limit) {
+        query += ` LIMIT ${limit}`;
+      }
       
-      const [rows] = await mysqlPool.execute(query, whereValues);
+      const [rows] = await mysqlPool.execute(query, queryValues);
       const results = rows as any[];
       
       return results.map(row => this.convertMySQLToDynamoDB(table, row)) as T[];
     } catch (error) {
       console.error('MySQL Scan Error:', error);
-      throw new Error(`Failed to scan ${tableName}`);
+      console.error('Table:', tableName);
+      throw new Error(`Failed to scan ${tableName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -489,9 +492,8 @@ export class MySQLHelper {
         case 'post_logs':
           const postData = typeof row.post_data === 'string'
             ? JSON.parse(row.post_data)
-            : row.post_data;
+            : (row.post_data || {});
           return {
-            id: row.post_id, // post_idをidとして使用
             userId: row.user_id,
             postId: row.post_id,
             timestamp: row.timestamp,

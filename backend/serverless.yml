@@ -137,6 +137,15 @@ functions:
           method: post
           cors: true
 
+  # 🚀 クリーンテスト（MySQL-First確認用）
+  cleanTest:
+    handler: dist/functions/test/cleanTest.handler
+    events:
+      - http:
+          path: /test/clean
+          method: get
+          cors: true
+
   # 投稿生成・実行（スケジューラー用）
   generateAndPost:
     handler: dist/functions/scheduler/generateAndPost.handler

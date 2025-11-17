@@ -1,6 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Diary } from '../../types';
 import { successResponse, errorResponse, internalServerErrorResponse } from '../../libs/response';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { S3Helper } from '../../libs/s3';
 import { ENV } from '../../libs/env';
 
@@ -20,8 +20,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const limit = parseInt(queryParams['limit'] || '10', 10);
     const status = queryParams['status']; // pending, processing, completed, failed
 
-    // 日記一覧を取得（DynamoDBのscanを使用）
-    const diaryItems = await DynamoDBHelper.scan<Diary>(
+    // 日記一覧を取得（MySQLのscanを使用）
+    const diaryItems = await MySQLHelper.scan<Diary>(
       ENV.DIARIES_TABLE,
       'userId = :userId',
       {

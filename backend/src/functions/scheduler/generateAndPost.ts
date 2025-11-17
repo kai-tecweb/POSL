@@ -127,7 +127,7 @@ async function logError(
     console.error('Error logged:', JSON.stringify(errorLog, null, 2));
     
     // エラーログを専用テーブルに保存（テーブルが存在する場合）
-    // await DynamoDBHelper.putItem('error-logs', errorLog);
+    // await MySQLHelper.putItem('error_logs', errorLog);
     
   } catch (logError) {
     console.error('Failed to log error:', logError);

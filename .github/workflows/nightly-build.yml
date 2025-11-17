@@ -1,0 +1,319 @@
+name: 🌙 Nightly Build & Integration Test
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 毎日午前2時（JST 11時）に実行
+  workflow_dispatch:  # 手動実行も可能
+
+env:
+  NODE_VERSION: '20'
+  AWS_REGION: 'ap-northeast-1'
+
+jobs:
+  # ========================
+  # フル統合テスト
+  # ========================
+  full-integration-test:
+    name: 🔄 Full Integration Test
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: posl_password
+          MYSQL_DATABASE: posl_integration_test
+          MYSQL_USER: posl_user
+          MYSQL_PASSWORD: posl_password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      
+      redis:
+        image: redis:7.0
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: 📦 Install Backend Dependencies
+        working-directory: backend
+        run: npm ci
+      
+      - name: 📦 Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      # データベースセットアップ
+      - name: 🗄️ Setup Test Database
+        run: |
+          mysql -h 127.0.0.1 -u posl_user -pposl_password posl_integration_test < infrastructure/mysql-schema.sql
+      
+      # バックエンド統合テスト
+      - name: 🧪 Backend Integration Tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          MYSQL_HOST: localhost
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: posl_integration_test
+          MYSQL_USER: posl_user
+          MYSQL_PASSWORD: posl_password
+          REDIS_URL: redis://localhost:6379
+        run: |
+          npm run test:integration
+      
+      # フロントエンド E2E テスト
+      - name: 🎭 Frontend E2E Tests
+        working-directory: frontend
+        run: |
+          npx playwright install
+          npm run test:e2e
+      
+      # パフォーマンステスト
+      - name: ⚡ Performance Tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          MYSQL_HOST: localhost
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: posl_integration_test
+          MYSQL_USER: posl_user
+          MYSQL_PASSWORD: posl_password
+        run: |
+          npm run test:performance
+
+  # ========================
+  # セキュリティ監査
+  # ========================
+  security-audit:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      # 依存関係脆弱性チェック
+      - name: 🔍 Backend NPM Audit
+        working-directory: backend
+        run: npm audit --audit-level moderate
+      
+      - name: 🔍 Frontend NPM Audit
+        working-directory: frontend
+        run: npm audit --audit-level moderate
+      
+      # 高度なセキュリティスキャン
+      - name: 🛡️ Snyk Security Scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=medium
+      
+      # コンテナセキュリティスキャン
+      - name: 🐳 Container Security Scan
+        run: |
+          docker build -f backend/Dockerfile.dev -t posl-backend:latest .
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy image --exit-code 1 --severity HIGH,CRITICAL posl-backend:latest
+
+  # ========================
+  # 依存関係更新チェック
+  # ========================
+  dependency-update:
+    name: 📦 Dependency Update Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      # バックエンド依存関係チェック
+      - name: 📊 Backend Outdated Check
+        working-directory: backend
+        run: |
+          npm outdated > backend_outdated.txt || true
+          cat backend_outdated.txt
+      
+      # フロントエンド依存関係チェック
+      - name: 📊 Frontend Outdated Check
+        working-directory: frontend
+        run: |
+          npm outdated > frontend_outdated.txt || true
+          cat frontend_outdated.txt
+      
+      # 自動PRを作成（major版更新以外）
+      - name: 🔄 Create Dependency Update PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs')
+            
+            let body = '## 📦 週次依存関係更新レポート\n\n'
+            
+            // バックエンド依存関係
+            if (fs.existsSync('backend_outdated.txt')) {
+              const backendOutdated = fs.readFileSync('backend_outdated.txt', 'utf8')
+              body += '### 🧪 Backend Dependencies\n\n'
+              body += '```\n' + backendOutdated + '\n```\n\n'
+            }
+            
+            // フロントエンド依存関係  
+            if (fs.existsSync('frontend_outdated.txt')) {
+              const frontendOutdated = fs.readFileSync('frontend_outdated.txt', 'utf8')
+              body += '### 🎨 Frontend Dependencies\n\n'
+              body += '```\n' + frontendOutdated + '\n```\n\n'
+            }
+            
+            body += '自動生成されたレポートです。必要に応じて手動で更新してください。'
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '📦 週次依存関係更新レポート',
+              body: body,
+              labels: ['dependencies', 'maintenance']
+            })
+
+  # ========================
+  # パフォーマンス監視
+  # ========================
+  performance-monitoring:
+    name: ⚡ Performance Monitoring
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: 📦 Install Dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: 🏗️ Build Frontend
+        working-directory: frontend
+        run: npm run build
+      
+      # Lighthouseパフォーマンステスト
+      - name: ⚡ Lighthouse Performance Test
+        uses: treosh/lighthouse-ci-action@v9
+        with:
+          configPath: './lighthouserc.json'
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+      
+      # Bundle size 分析
+      - name: 📊 Bundle Size Analysis
+        working-directory: frontend
+        run: |
+          npx bundle-analyzer .next/static/**/*.js
+
+  # ========================
+  # コードクオリティ監視
+  # ========================
+  code-quality:
+    name: 📊 Code Quality Monitoring
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarQube用に全履歴取得
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      # SonarQube分析
+      - name: 📊 SonarQube Scan
+        uses: sonarqube-quality-gate-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          scanMetadataReportFile: target/sonar/report-task.txt
+
+  # ========================
+  # 結果サマリー
+  # ========================
+  nightly-summary:
+    name: 📋 Nightly Build Summary
+    runs-on: ubuntu-latest
+    needs: [full-integration-test, security-audit, dependency-update, performance-monitoring, code-quality]
+    if: always()
+    
+    steps:
+      - name: 📊 Generate Summary Report
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const results = {
+              integration: '${{ needs.full-integration-test.result }}',
+              security: '${{ needs.security-audit.result }}',
+              dependencies: '${{ needs.dependency-update.result }}',
+              performance: '${{ needs.performance-monitoring.result }}',
+              quality: '${{ needs.code-quality.result }}'
+            }
+            
+            const passed = Object.values(results).filter(r => r === 'success').length
+            const failed = Object.values(results).filter(r => r === 'failure').length
+            const total = Object.keys(results).length
+            
+            const summary = `## 🌙 Nightly Build Summary
+            
+            **Date:** ${new Date().toISOString().split('T')[0]}
+            **Status:** ${failed === 0 ? '✅ All Passed' : '❌ Issues Found'}
+            
+            ### 📊 Results
+            - ✅ Passed: ${passed}/${total}
+            - ❌ Failed: ${failed}/${total}
+            
+            ### 📋 Details
+            ${Object.entries(results).map(([job, result]) => 
+              `- ${result === 'success' ? '✅' : result === 'failure' ? '❌' : '⏭️'} ${job}: ${result}`
+            ).join('\n')}
+            
+            ${failed > 0 ? '⚠️ **Action Required:** 失敗したチェック項目を確認してください。' : '🎉 **All Good:** すべてのチェックが正常に完了しました！'}
+            `
+            
+            // Slackに通知
+            const webhook = '${{ secrets.SLACK_WEBHOOK_URL }}'
+            if (webhook) {
+              await fetch(webhook, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: `🌙 POSL Nightly Build: ${failed === 0 ? '✅ Success' : '❌ Issues Found'}`,
+                  blocks: [{
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: summary }
+                  }]
+                })
+              })
+            }

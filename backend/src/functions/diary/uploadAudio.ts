@@ -1,6 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, AudioUploadRequest, AudioUploadResponse, Diary } from '../../types';
 import { successResponse, errorResponse, internalServerErrorResponse } from '../../libs/response';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { S3Helper } from '../../libs/s3';
 import { ENV } from '../../libs/env';
 
@@ -66,7 +66,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       request.contentType
     );
 
-    // DynamoDBに日記エントリーを作成（初期状態）
+    // MySQLに日記エントリーを作成（初期状態）
     const diaryEntry: Diary = {
       userId,
       diaryId,
@@ -80,7 +80,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       fileSize: request.fileSize
     };
 
-    await DynamoDBHelper.putItem(ENV.DIARIES_TABLE, diaryEntry);
+    await MySQLHelper.putItem(ENV.DIARIES_TABLE, diaryEntry);
 
     // レスポンス
     const response: AudioUploadResponse = {

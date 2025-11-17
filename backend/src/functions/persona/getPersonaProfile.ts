@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, PersonaProfile } from '../../types';
-import { DynamoDBHelper } from '../../libs/dynamodb';
+import { MySQLHelper } from '../../libs/mysql';
 import { successResponse, internalServerErrorResponse } from '../../libs/response';
 import { ENV } from '../../libs/env';
 
@@ -14,8 +14,8 @@ export const handler = async (
                    event.queryStringParameters?.['userId'] || 
                    'default-user';
 
-    // DynamoDBから人格プロファイルを取得
-    const profile = await DynamoDBHelper.getItem<PersonaProfile>(
+    // MySQLから人格プロファイルを取得
+    const profile = await MySQLHelper.getItem<PersonaProfile>(
       ENV.PERSONA_PROFILES_TABLE,
       { userId }
     );
