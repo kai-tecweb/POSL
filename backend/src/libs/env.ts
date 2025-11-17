@@ -2,6 +2,10 @@
  * 環境変数を安全に取得するヘルパー関数
  */
 
+// .envファイルを読み込み
+import dotenv from 'dotenv';
+dotenv.config();
+
 export const getEnvVar = (key: string, defaultValue?: string): string => {
   const value = process.env[key];
   if (!value && defaultValue === undefined) {

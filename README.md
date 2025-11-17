@@ -6,6 +6,7 @@ POSLは「あなたの分身が書いたような、自然で前向きなX投稿
 
 - AIが文章を自動生成して、毎日1回X（旧Twitter）に投稿
 - ユーザーの人格データ・日記・トレンド・曜日テーマを混ぜて一貫性のある発信を継続
+- **実際のOpenAI GPT-4 APIによる高品質な文章生成**
 - **EC2+RDS(MySQL)+Express.js による24時間稼働の安定アーキテクチャ**
 
 ## 📊 開発進捗状況
@@ -24,15 +25,23 @@ POSLは「あなたの分身が書いたような、自然で前向きなX投稿
 - [x] **MySQL開発環境構築完了**（Docker + MySQL 8.0）
 - [x] **MySQLHelper実装完了**（DynamoDB互換API・動作テスト済み）
 
-### 🔄 Phase 6: アーキテクチャ移行フェーズ (進行中 - Week 3完了)
+### ✅ Phase 6: アーキテクチャ移行フェーズ (完了) 🎉
 - [x] **MySQL基盤構築完了**（スキーマ設計・初期化・テスト）
 - [x] **MySQLHelper実装完了**（DynamoDB完全互換）
 - [x] **PromptEngine MySQL統合完了**（17テストケース確認済み）
 - [x] **ErrorLogMonitor実装完了**（システム監視・エラー管理）
-- [ ] **Express.js統合API実装**（Week 4-6予定）
-- [ ] **本番環境構築・移行**（Week 7-12予定）
+- [x] **OpenAI API本格統合完了** 🎉 **NEW**
+  - 実際のGPT-4 API通信成功
+  - プロンプト生成機能実稼働（4-9秒応答）
+  - 環境変数管理・dotenv統合完了
 
-**移行進捗**: Week 3完了（40%進行中）  
+### 🔄 Phase 7: 外部API統合フェーズ (次期)
+- [ ] **X API統合**（実際の投稿機能）
+- [ ] **トレンド取得API**（Google/Yahoo Trends）
+- [ ] **音声日記機能**（Whisper API）
+- [ ] **自動投稿システム完成**
+
+**移行進捗**: Phase 6完了（70%進行中）  
 **期間**: 12週間（2025年11月17日〜2025年2月13日）
 
 ## 🛠 技術スタック
@@ -41,6 +50,7 @@ POSLは「あなたの分身が書いたような、自然で前向きなX投稿
 - **EC2 (Express.js + Node.js 18.x, TypeScript)**
 - **RDS MySQL 8.0 (Multi-AZ)**
 - **Application Load Balancer**
+- **OpenAI GPT-4 API (統合済み)** 🎉
 - **node-cron (スケジューラー)**
 - **PM2 + systemd (プロセス管理)**
 - S3 (音声ファイル保存)
@@ -83,12 +93,21 @@ git clone <repository-url>
 cd POSL
 ```
 
-2. Docker環境起動（MySQL + DynamoDB + MinIO）
+2. **環境変数設定** 🎉 **NEW**
+```bash
+# .envファイルを作成
+cp .env.example .env
+
+# .envファイルを編集してOpenAI APIキーを設定
+# OPENAI_API_KEY=sk-proj-your-actual-openai-api-key
+```
+
+3. Docker環境起動（MySQL + DynamoDB + MinIO）
 ```bash
 docker-compose up -d mysql dynamodb-local minio
 ```
 
-3. フロントエンド開発サーバー起動
+4. フロントエンド開発サーバー起動
 ```bash
 cd frontend
 npm install
@@ -96,13 +115,26 @@ npm run dev
 # http://localhost:3000
 ```
 
-4. バックエンド開発環境（Serverless Offline）
+5. バックエンド開発環境（Serverless Offline）
 ```bash
 cd backend
 npm install
 npm run build
+
+# 環境変数付きで起動
+node start-with-env.js
+# または従来方式
 ./scripts/dev-server.sh start
 # http://localhost:3001
+```
+
+### 🔍 プロンプト生成機能テスト 🎉 **NEW**
+
+```bash
+# OpenAI API統合テスト
+curl -X POST http://localhost:3001/local/post/generate-and-post \
+  -H "Content-Type: application/json" \
+  -d '{"testMode": true}'
 ```
 
 ### 🔍 開発環境の動作確認

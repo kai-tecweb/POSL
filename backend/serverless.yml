@@ -1,6 +1,8 @@
 service: posl-backend
 frameworkVersion: '3'
 
+useDotenv: true
+
 custom:
   serverless-offline:
     httpPort: 3001
