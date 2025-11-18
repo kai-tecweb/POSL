@@ -14,19 +14,10 @@ const createMySQLPool = () => {
     charset: 'utf8mb4',
     connectionLimit: 10,
     multipleStatements: false
+    // SSL設定を一時的に削除してテスト
   };
 
-  // 本番環境の場合のみSSL設定を追加
-  if (ENV.NODE_ENV === 'production') {
-    return mysql.createPool({
-      ...baseConfig,
-      ssl: {
-        rejectUnauthorized: false  // RDS自己署名証明書のため
-      }
-    });
-  } else {
-    return mysql.createPool(baseConfig);
-  }
+  return mysql.createPool(baseConfig);
 };
 
 // MySQL接続プール
@@ -70,6 +61,13 @@ export class MySQLHelper {
       'posl-dev-diaries': 'diaries',
       'posl-dev-personaProfiles': 'persona_profiles',
       'posl-dev-errorLogs': 'error_logs',
+      // dev環境用（ハイフン形式）
+      'posl-users-dev': 'users',
+      'posl-settings-dev': 'settings',
+      'posl-post-logs-dev': 'post_logs',
+      'posl-diaries-dev': 'diaries',
+      'posl-persona-profiles-dev': 'persona_profiles',
+      'posl-error-logs-dev': 'error_logs',
       // ローカル環境用
       'posl-users-local': 'users',
       'posl-settings-local': 'settings',
@@ -142,7 +140,7 @@ export class MySQLHelper {
       const table = this.normalizeTableName(tableName);
       const { where, values } = this.buildWhereClause(table, key);
       
-      const query = `SELECT * FROM ${table} ${where}`;
+      const query = `SELECT * FROM \`${table}\` ${where}`;
       const [rows] = await mysqlPool.execute(query, values);
       const result = rows as any[];
       
@@ -166,6 +164,8 @@ export class MySQLHelper {
       const table = this.normalizeTableName(tableName);
       const mysqlItem = this.convertDynamoDBToMySQL(table, item);
       
+      console.error('PutItem Debug:', { tableName, table, item, mysqlItem });
+      
       const columns = Object.keys(mysqlItem);
       const placeholders = columns.map(() => '?').join(', ');
       const values = Object.values(mysqlItem);
@@ -177,10 +177,12 @@ export class MySQLHelper {
         .join(', ');
       
       const query = `
-        INSERT INTO ${table} (${columns.join(', ')}) 
+        INSERT INTO \`${table}\` (${columns.join(', ')}) 
         VALUES (${placeholders})
         ON DUPLICATE KEY UPDATE ${updateClause}
       `;
+      
+      console.error('Generated SQL:', query, 'Values:', values);
       
       await mysqlPool.execute(query, values);
     } catch (error) {
@@ -274,7 +276,7 @@ export class MySQLHelper {
       // LIMIT句
       const limitClause = limit ? `LIMIT ${limit}` : '';
       
-      const query = `SELECT * FROM ${table} WHERE ${whereClause} ${orderBy} ${limitClause}`;
+      const query = `SELECT * FROM \`${table}\` WHERE ${whereClause} ${orderBy} ${limitClause}`;
       const [rows] = await mysqlPool.execute(query, whereValues);
       const results = rows as any[];
       
@@ -300,7 +302,7 @@ export class MySQLHelper {
       const table = this.normalizeTableName(tableName);
       
       // シンプルなクエリ構築
-      let query = `SELECT * FROM ${table}`;
+      let query = `SELECT * FROM \`${table}\``;
       let queryValues: any[] = [];
       
       // フィルタ条件がある場合
@@ -425,9 +427,16 @@ export class MySQLHelper {
         const cleanPostData = Object.fromEntries(
           Object.entries(postData).filter(([_, value]) => value !== undefined)
         );
+        
+        // postIdが存在することを確認
+        const finalPostId = postId || id;
+        if (!finalPostId) {
+          throw new Error('post_logs requires postId or id field');
+        }
+        
         return {
-          user_id: postUserId || cleanPostData.userId,
-          post_id: postId || id, // idをpost_idとして使用
+          user_id: postUserId,
+          post_id: finalPostId,
           timestamp: item.timestamp,
           post_data: JSON.stringify(cleanPostData)
           // created_atはDEFAULT_GENERATEDのため除外
