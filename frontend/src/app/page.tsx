@@ -37,7 +37,7 @@ export default function Home() {
           </Link>
 
           <Link 
-            href="/settings" 
+            href={"/settings" as any}
             className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
           >
             <div className="flex items-center mb-4">

@@ -1,17 +1,7 @@
 import { APIGatewayProxyHandler } from 'aws-lambda'
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb'
 import { successResponse, errorResponse } from '../../libs/response'
+import { MySQLHelper } from '../../libs/mysql'
 import Joi from 'joi'
-
-const client = new DynamoDBClient({
-  region: process.env['AWS_REGION'] || 'ap-northeast-1',
-  ...(process.env['AWS_ENDPOINT_URL'] && {
-    endpoint: process.env['AWS_ENDPOINT_URL']
-  })
-})
-
-const dynamoDb = DynamoDBDocumentClient.from(client)
 
 const querySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).optional(),
@@ -29,41 +19,31 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     }
 
     const { limit = 20, lastKey, status } = value
-    const userId = 'default' // 実際の実装では認証から取得
+    const userId = 'demo' // 実際の実装では認証から取得
 
-    // DynamoDBクエリの構築
-    let queryParams: any = {
-      TableName: process.env['POST_LOGS_TABLE'] || 'posl-post-logs-local',
-      IndexName: 'timestamp-index',
-      KeyConditionExpression: 'userId = :userId',
-      ExpressionAttributeValues: {
-        ':userId': userId
-      },
-      Limit: limit,
-      ScanIndexForward: false // 最新から取得
-    }
-
-    // ステータスフィルター
+    // MySQLでの投稿ログ取得
+    const whereConditions: any = { userId };
+    
     if (status) {
-      queryParams.FilterExpression = '#status = :status'
-      queryParams.ExpressionAttributeNames = {
-        '#status': 'status'
-      }
-      queryParams.ExpressionAttributeValues[':status'] = status
+      whereConditions.status = status;
     }
 
-    // ページネーション
-    if (lastKey) {
-      queryParams.ExclusiveStartKey = JSON.parse(lastKey)
-    }
+    const items = await MySQLHelper.scan('post_logs', whereConditions);
 
-    const result = await dynamoDb.send(new QueryCommand(queryParams))
+    // timestampで降順ソート
+    items.sort((a: any, b: any) => {
+      return new Date(b.timestamp || b.created_at).getTime() - 
+             new Date(a.timestamp || a.created_at).getTime();
+    });
+
+    // limit適用
+    const limitedItems = items.slice(0, limit);
 
     return successResponse({
-      items: result.Items || [],
-      lastKey: result.LastEvaluatedKey ? JSON.stringify(result.LastEvaluatedKey) : null,
-      count: result.Count || 0
-    })
+      items: limitedItems,
+      lastKey: null, // MySQLでは単純なlimitを使用
+      count: limitedItems.length
+    });
 
   } catch (error) {
     console.error('Error getting post status:', error)

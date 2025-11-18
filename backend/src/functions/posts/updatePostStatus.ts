@@ -1,17 +1,7 @@
 import { APIGatewayProxyHandler } from 'aws-lambda'
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { successResponse, errorResponse } from '../../libs/response'
+import { MySQLHelper } from '../../libs/mysql'
 import Joi from 'joi'
-
-const client = new DynamoDBClient({
-  region: process.env['AWS_REGION'] || 'ap-northeast-1',
-  ...(process.env['AWS_ENDPOINT_URL'] && {
-    endpoint: process.env['AWS_ENDPOINT_URL']
-  })
-})
-
-const dynamoDb = DynamoDBDocumentClient.from(client)
 
 const updateSchema = Joi.object({
   status: Joi.string().valid('pending', 'processing', 'completed', 'failed').required(),
@@ -50,38 +40,33 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     const userId = 'default' // 実際の実装では認証から取得
     const timestamp = new Date().toISOString()
 
-    // DynamoDB更新パラメータ
-    const updateParams: any = {
-      TableName: process.env['POST_LOGS_TABLE'] || 'posl-post-logs-local',
-      Key: {
-        userId,
-        postId
-      },
-      UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt',
-      ExpressionAttributeNames: {
-        '#status': 'status'
-      },
-      ExpressionAttributeValues: {
-        ':status': status,
-        ':updatedAt': timestamp
-      }
+    // MySQLの既存投稿ログを取得
+    const existingLog = await MySQLHelper.getItem('post_logs', { 
+      userId, 
+      postId 
+    });
+    
+    if (!existingLog) {
+      return errorResponse(`Post log not found: postId=${postId}`);
     }
 
-    // エラー詳細がある場合は追加
+    // 更新データを準備
+    const updatedLog: any = {
+      ...existingLog,
+      status,
+      updated_at: timestamp
+    };
+    
     if (errorDetails) {
-      updateParams.UpdateExpression += ', #error = :error'
-      updateParams.ExpressionAttributeNames['#error'] = 'error'
-      updateParams.ExpressionAttributeValues[':error'] = errorDetails
+      updatedLog.error_message = errorDetails;
     }
-
-    // 結果データがある場合は追加
+    
     if (result) {
-      updateParams.UpdateExpression += ', #result = :result'
-      updateParams.ExpressionAttributeNames['#result'] = 'result'
-      updateParams.ExpressionAttributeValues[':result'] = result
+      updatedLog.result = JSON.stringify(result);
     }
 
-    await dynamoDb.send(new UpdateCommand(updateParams))
+    // MySQLHelperで更新実行
+    await MySQLHelper.putItem('post_logs', updatedLog);
 
     return successResponse({
       postId,

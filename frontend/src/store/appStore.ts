@@ -361,20 +361,25 @@ export const useAppStore = create<AppStore>()(
 
       // Data actions (API calls would be implemented here)
       fetchTrends: async () => {
+        console.log('fetchTrends called - starting trend fetch')
         try {
           set({ loading: true })
+          console.log('Making API call to trendsAPI.fetchTrends()')
           const response = await trendsAPI.fetchTrends()
+          console.log('API response received:', response)
           
-          // Transform response to TrendData format
+          // Transform Google Trends response to TrendData format
           const trends: TrendData[] = response.data?.trends?.map((trend: any, index: number) => ({
             rank: index + 1,
-            keyword: trend.keyword || trend.title,
-            source: trend.source || 'unknown',
-            category: trend.category || 'general'
+            keyword: trend.query || trend.keyword || trend.title,
+            source: 'google',
+            category: 'トレンド'
           })) || []
           
+          console.log('Transformed trends:', trends)
           set({ trends, loading: false })
         } catch (error) {
+          console.error('Failed to fetch trends:', error)
           // Fallback to mock data
           const mockTrends: TrendData[] = [
             { rank: 1, keyword: 'AI技術', source: 'google', category: 'Technology' },

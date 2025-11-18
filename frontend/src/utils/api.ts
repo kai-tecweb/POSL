@@ -1,10 +1,31 @@
-// API endpoints
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+// API endpoints - 環境に応じて動的に設定
+const getApiBaseUrl = () => {
+  // ブラウザ環境でない場合（SSR）
+  if (typeof window === 'undefined') {
+    return '/api'
+  }
+  
+  // ブラウザ環境での判定
+  const hostname = window.location.hostname
+  console.log('Current hostname:', hostname) // デバッグログ
+  
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    // ローカル開発環境
+    console.log('Using localhost API')
+    return 'http://localhost:3001'
+  } else {
+    // AWS本番環境 - 相対パスでNginxプロキシを利用
+    console.log('Using production API path: /api')
+    return '/api'
+  }
+}
 
 // API utility functions for settings
 export const settingsAPI = {
   async getSettings(settingType: string) {
-    const response = await fetch(`${API_BASE_URL}/settings/${settingType}`)
+    const baseUrl = getApiBaseUrl()
+    console.log('Settings API call to:', `${baseUrl}/settings/${settingType}`)
+    const response = await fetch(`${baseUrl}/settings/${settingType}`)
     if (!response.ok) {
       throw new Error(`Failed to fetch ${settingType} settings`)
     }
@@ -12,7 +33,8 @@ export const settingsAPI = {
   },
 
   async updateSettings(settingType: string, data: any) {
-    const response = await fetch(`${API_BASE_URL}/settings/${settingType}`, {
+    const baseUrl = getApiBaseUrl()
+    const response = await fetch(`${baseUrl}/settings/${settingType}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -29,7 +51,9 @@ export const settingsAPI = {
 // API utility functions for trends
 export const trendsAPI = {
   async fetchTrends() {
-    const response = await fetch(`${API_BASE_URL}/trends/fetch`)
+    const baseUrl = getApiBaseUrl()
+    console.log('Trends API call to:', `${baseUrl}/trends/google`)
+    const response = await fetch(`${baseUrl}/trends/google`)
     if (!response.ok) {
       throw new Error('Failed to fetch trends')
     }
@@ -40,7 +64,8 @@ export const trendsAPI = {
 // API utility functions for post logs
 export const postsAPI = {
   async getPostLogs(limit: number = 20) {
-    const response = await fetch(`${API_BASE_URL}/post/logs?limit=${limit}`)
+    const baseUrl = getApiBaseUrl()
+    const response = await fetch(`${baseUrl}/post/logs?limit=${limit}`)
     if (!response.ok) {
       throw new Error('Failed to fetch post logs')
     }
@@ -48,7 +73,8 @@ export const postsAPI = {
   },
 
   async getPostStatus(limit: number = 20) {
-    const response = await fetch(`${API_BASE_URL}/post/status?limit=${limit}`)
+    const baseUrl = getApiBaseUrl()
+    const response = await fetch(`${baseUrl}/post/status?limit=${limit}`)
     if (!response.ok) {
       throw new Error('Failed to fetch post status')
     }
@@ -56,7 +82,8 @@ export const postsAPI = {
   },
 
   async testPost(content: string) {
-    const response = await fetch(`${API_BASE_URL}/test/post`, {
+    const baseUrl = getApiBaseUrl()
+    const response = await fetch(`${baseUrl}/test/post`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,7 +100,8 @@ export const postsAPI = {
 // API utility functions for error logs
 export const errorLogsAPI = {
   async getErrorLogs(limit: number = 10) {
-    const response = await fetch(`${API_BASE_URL}/errors/logs?limit=${limit}`)
+    const baseUrl = getApiBaseUrl()
+    const response = await fetch(`${baseUrl}/errors/logs?limit=${limit}`)
     if (!response.ok) {
       throw new Error('Failed to fetch error logs')
     }
@@ -81,7 +109,8 @@ export const errorLogsAPI = {
   },
 
   async clearErrorLogs() {
-    const response = await fetch(`${API_BASE_URL}/errors/logs`, {
+    const baseUrl = getApiBaseUrl()
+    const response = await fetch(`${baseUrl}/errors/logs`, {
       method: 'DELETE'
     })
     if (!response.ok) {

@@ -119,7 +119,7 @@ start_server() {
     log_info "ポート $port でサーバーを起動中..."
     
     # サーバー起動（バックグラウンド）
-    nohup npx serverless offline --stage local --host 0.0.0.0 --httpPort $port > /tmp/${PROJECT_NAME}-dev.log 2>&1 &
+    nohup npx serverless offline --stage dev --host 0.0.0.0 --httpPort $port > /tmp/${PROJECT_NAME}-dev.log 2>&1 &
     local server_pid=$!
     
     # PID保存
@@ -129,10 +129,10 @@ start_server() {
     log_info "サーバー起動確認中..."
     for i in {1..30}; do
         sleep 1
-        if curl -s "http://localhost:$port/local" >/dev/null 2>&1 || check_port $port; then
+        if curl -s "http://localhost:$port/dev" >/dev/null 2>&1 || check_port $port; then
             log_info "✅ サーバーが起動しました！"
             log_info "🌐 URL: http://localhost:$port"
-            log_info "📋 API一覧: http://localhost:$port/local"
+            log_info "📋 API一覧: http://localhost:$port/dev"
             log_info "📝 ログ: tail -f /tmp/${PROJECT_NAME}-dev.log"
             log_info "🛑 停止: $0 stop"
             return 0
@@ -172,7 +172,7 @@ status_server() {
         fi
         
         # API疎通確認
-        if curl -s "http://localhost:$found_port/local" >/dev/null 2>&1; then
+        if curl -s "http://localhost:$found_port/dev" >/dev/null 2>&1; then
             log_info "✅ API疎通確認成功"
         else
             log_warn "⚠️  API疎通確認失敗"
