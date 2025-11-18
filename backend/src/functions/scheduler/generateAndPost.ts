@@ -4,7 +4,6 @@ import { PromptEngine } from '../../libs/prompt-engine';
 import { OpenAIHelper } from '../../libs/openai';
 import { XHelper } from '../../libs/x-api';
 import { MySQLHelper } from '../../libs/mysql';
-import { errorLogger } from '../../libs/error-logger';
 import { ENV } from '../../libs/env';
 
 /**
@@ -49,92 +48,6 @@ async function retryWithBackoff<T>(
 }
 
 /**
- * 投稿ステータスを更新する関数（MySQL版）
- */
-async function updatePostStatus(
-  userId: string,
-  postId: string,
-  status: 'pending' | 'processing' | 'completed' | 'failed',
-  error?: string,
-  result?: any
-): Promise<void> {
-  try {
-    // 既存の投稿ログを取得（MySQLの複合キーを使用）
-    const existingLog = await MySQLHelper.getItem('post_logs', { 
-      userId: userId, 
-      postId: postId 
-    });
-    
-    if (!existingLog) {
-      throw new Error(`Post log not found: userId=${userId}, postId=${postId}`);
-    }
-
-    // 更新データを準備（型を明示的にany指定）
-    const updatedLog: any = {
-      ...existingLog,
-      status,
-      updated_at: new Date().toISOString()
-    };
-    
-    if (error) {
-      updatedLog.error_message = error;
-    }
-    
-    if (result) {
-      updatedLog.result = JSON.stringify(result);
-    }
-
-    // MySQLHelperのputItemで更新
-    await MySQLHelper.putItem('post_logs', updatedLog);
-
-  } catch (updateError) {
-    console.error('Failed to update post status:', updateError);
-    await errorLogger.error(
-      '投稿ステータス更新失敗',
-      'updatePostStatus',
-      {
-        userId,
-        postId,
-        status,
-        error: updateError instanceof Error ? updateError.message : 'Unknown error'
-      }
-    );
-  }
-}
-
-/**
- * エラーログを記録する関数
- */
-async function logError(
-  userId: string,
-  postId: string,
-  error: Error,
-  context: any = {}
-): Promise<void> {
-  try {
-    const errorLog = {
-      userId,
-      postId,
-      timestamp: new Date().toISOString(),
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      },
-      context
-    };
-    
-    console.error('Error logged:', JSON.stringify(errorLog, null, 2));
-    
-    // エラーログを専用テーブルに保存（テーブルが存在する場合）
-    // await MySQLHelper.putItem('error_logs', errorLog);
-    
-  } catch (logError) {
-    console.error('Failed to log error:', logError);
-  }
-}
-
-/**
  * 投稿生成・実行 Lambda 関数（エラーハンドリング強化版）
  * EventBridge から自動実行される、またはAPIから手動実行可能
  */
@@ -158,25 +71,20 @@ export const handler = async (
     // 投稿IDの生成
     postId = generateUUID().replace(/-/g, '');
     
-    // 初期投稿ログをMySQLに作成
+    // 初期投稿ログをMySQLに作成 (post_logsテーブル構造に合わせる)
     const initialPostLog = {
       userId: userId,
       postId: postId,
-      status: 'pending',
-      content: '',
       timestamp: new Date().toISOString(),
+      content: '',
       xPostId: '',
       prompt: '',
-      trendData: null,
+      trendData: [],
       success: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      status: 'pending'
     };
     
     await MySQLHelper.putItem('post_logs', initialPostLog);
-
-    // processingステータスに更新
-    await updatePostStatus(userId, postId, 'processing');
 
     // プロンプト生成エンジンを初期化（リトライ付き）
     const promptEngine = new PromptEngine(userId);
@@ -221,16 +129,6 @@ export const handler = async (
         xPostId = postResult.tweetId;
       } catch (xError) {
         console.error('X posting failed after retries:', xError);
-        await logError(userId, postId, xError as Error, { postContent, context });
-        
-        // X投稿が失敗しても処理は継続
-        await updatePostStatus(
-          userId, 
-          postId, 
-          'failed', 
-          `X posting failed: ${(xError as Error).message}`,
-          { postContent, attemptedPost: true }
-        );
       }
     }
 
@@ -251,15 +149,6 @@ export const handler = async (
     };
 
     await MySQLHelper.putItem('post_logs', postLog);
-
-    // 成功ステータスに更新
-    await updatePostStatus(
-      userId, 
-      postId, 
-      xPostId ? 'completed' : 'failed', 
-      xPostId ? undefined : (shouldPost ? 'X posting failed' : 'Posting disabled'),
-      { xPostId, postContent, context: context.trends }
-    );
 
     // レスポンス
     const response = {
@@ -292,14 +181,6 @@ export const handler = async (
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
     console.error('Critical error in generateAndPost:', error);
-    
-    // エラーログを記録
-    if (userId && postId) {
-      await logError(userId, postId, error, { eventSource: event.source });
-      
-      // 失敗ステータスに更新
-      await updatePostStatus(userId, postId, 'failed', errorMessage);
-    }
     
     // EventBridge からの実行の場合
     if (event.source === 'aws.events') {

@@ -441,7 +441,9 @@ export class MySQLHelper {
           created_at: createdAt,
           diary_data: JSON.stringify(item),
           content: content || item.content || ''
-        };      case 'persona_profiles':
+        };
+        
+      case 'persona_profiles':
         const { userId: personaUserId, ...personaData } = item;
         return {
           user_id: personaUserId,
