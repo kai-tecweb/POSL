@@ -137,6 +137,12 @@ export class SecretsHelper {
    * POSL専用：OpenAI APIキーを取得
    */
   static async getOpenAIApiKey(): Promise<string> {
+    // 環境変数から取得を試行
+    const envKey = process.env.OPENAI_API_KEY;
+    if (envKey) {
+      return envKey;
+    }
+    // 本番環境でのみSecrets Managerを使用
     return this.getSecret('posl/openai-api-key');
   }
 
