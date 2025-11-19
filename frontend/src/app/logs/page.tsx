@@ -5,13 +5,14 @@ import { postsAPI } from '@/utils/api'
 import Layout from '@/components/Layout'
 
 interface PostLog {
-  userId: string
-  postId: string
-  timestamp: string
+  id: number
+  user_id: string
   content: string
-  prompt: string
-  success: boolean
-  createdAt: string
+  tweet_id: string | null
+  status: string
+  posted_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export default function LogsPage() {
@@ -27,7 +28,7 @@ export default function LogsPage() {
         console.log('Logs API response:', response)
         
         if (response.success && response.data) {
-          setLogs(response.data.posts || [])
+          setLogs(response.data)  // 直接dataを使用
         } else {
           setError('Failed to fetch logs')
         }
@@ -88,33 +89,33 @@ export default function LogsPage() {
           ) : (
             <div className="divide-y divide-gray-200">
               {logs.map((log) => (
-                <div key={log.postId} className="px-6 py-4">
+                <div key={log.id} className="px-6 py-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center mb-2">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          log.success 
+                          log.status === 'posted'
                             ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
                         }`}>
-                          {log.success ? '成功' : 'エラー'}
+                          {log.status === 'posted' ? '投稿済み' : log.status}
                         </span>
                         <span className="ml-2 text-sm text-gray-500">
-                          {new Date(log.createdAt).toLocaleString('ja-JP')}
+                          {new Date(log.created_at).toLocaleString('ja-JP')}
                         </span>
                       </div>
                       
                       <p className="text-gray-900 mb-2">{log.content}</p>
                       
-                      {log.prompt && (
+                      {log.posted_at && (
                         <p className="text-sm text-gray-600">
-                          <span className="font-medium">プロンプト:</span> {log.prompt}
+                          <span className="font-medium">投稿日時:</span> {new Date(log.posted_at).toLocaleString('ja-JP')}
                         </p>
                       )}
                     </div>
                     
                     <div className="ml-4 text-sm text-gray-500">
-                      ID: {log.postId}
+                      ID: {log.id}
                     </div>
                   </div>
                 </div>

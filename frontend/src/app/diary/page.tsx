@@ -43,7 +43,21 @@ const AudioDiary = () => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // マイク権限の確認
+      const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+      
+      if (permissionStatus.state === 'denied') {
+        alert('マイクへのアクセスが拒否されています。ブラウザの設定でマイクの使用を許可してください。')
+        return
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
       const recorder = new MediaRecorder(stream)
       
       recorder.ondataavailable = (event) => {
@@ -83,8 +97,18 @@ const AudioDiary = () => {
         setRecordingTime(0)
       })
 
-    } catch (error) {
-      alert('マイクへのアクセスが拒否されました')
+    } catch (error: any) {
+      console.error('Recording error:', error)
+      
+      if (error.name === 'NotAllowedError') {
+        alert('マイクへのアクセスが拒否されました。ブラウザのアドレスバーにあるマイクアイコンをクリックして許可してください。')
+      } else if (error.name === 'NotFoundError') {
+        alert('マイクが見つかりません。マイクが接続されていることを確認してください。')
+      } else if (error.name === 'NotSupportedError') {
+        alert('お使いのブラウザは音声録音をサポートしていません。Chrome、Firefox、Safariの最新版をお使いください。')
+      } else {
+        alert(`録音を開始できませんでした: ${error.message || '不明なエラーが発生しました'}`)
+      }
     }
   }
 
@@ -168,6 +192,19 @@ const AudioDiary = () => {
               <div className="border-t pt-6">
                 <h4 className="text-sm font-medium text-gray-900 mb-4">または直接録音</h4>
                 
+                {/* マイク権限の説明 */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                  <div className="flex">
+                    <svg className="w-5 h-5 text-yellow-400 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <div className="text-sm text-yellow-800">
+                      <p className="font-medium">マイクの許可が必要です</p>
+                      <p>ブラウザからマイクアクセスの許可が求められたら「許可」を選択してください。</p>
+                    </div>
+                  </div>
+                </div>
+                
                 {!isRecording ? (
                   <Button
                     onClick={startRecording}
@@ -204,11 +241,17 @@ const AudioDiary = () => {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h4 className="text-sm font-medium text-blue-900 mb-2">💡 録音のコツ</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• 初回はブラウザでマイク許可を選択</li>
                   <li>• 静かな環境で録音する</li>
                   <li>• マイクから適切な距離を保つ</li>
                   <li>• ゆっくりとはっきり話す</li>
                   <li>• 5-10分程度が最適な長さです</li>
                 </ul>
+                <div className="mt-3 pt-3 border-t border-blue-200">
+                  <p className="text-xs text-blue-700">
+                    <strong>トラブルシューティング:</strong> マイクが使用できない場合は、ブラウザのアドレスバーのマイクアイコンをクリックして設定を確認してください。
+                  </p>
+                </div>
               </div>
             </div>
           </Card>

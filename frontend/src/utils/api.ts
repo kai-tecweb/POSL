@@ -24,8 +24,8 @@ const getApiBaseUrl = () => {
 export const settingsAPI = {
   async getSettings(settingType: string) {
     const baseUrl = getApiBaseUrl()
-    console.log('Settings API call to:', `${baseUrl}/settings/${settingType}`)
-    const response = await fetch(`${baseUrl}/settings/${settingType}`)
+    console.log('Settings API call to:', `${baseUrl}/dev/settings/${settingType}`)
+    const response = await fetch(`${baseUrl}/dev/settings/${settingType}`)
     if (!response.ok) {
       throw new Error(`Failed to fetch ${settingType} settings`)
     }
@@ -34,7 +34,7 @@ export const settingsAPI = {
 
   async updateSettings(settingType: string, data: any) {
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/settings/${settingType}`, {
+    const response = await fetch(`${baseUrl}/dev/settings/${settingType}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -52,8 +52,8 @@ export const settingsAPI = {
 export const trendsAPI = {
   async fetchTrends() {
     const baseUrl = getApiBaseUrl()
-    console.log('Trends API call to:', `${baseUrl}/trends/google`)
-    const response = await fetch(`${baseUrl}/trends/google`)
+    console.log('Trends API call to:', `${baseUrl}/api/trends/google`)
+    const response = await fetch(`${baseUrl}/api/trends/google`)
     if (!response.ok) {
       throw new Error('Failed to fetch trends')
     }
@@ -65,7 +65,7 @@ export const trendsAPI = {
 export const postsAPI = {
   async getPostLogs(limit: number = 20) {
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/post/logs?limit=${limit}`)
+    const response = await fetch(`${baseUrl}/api/post/logs?limit=${limit}`)
     if (!response.ok) {
       throw new Error('Failed to fetch post logs')
     }
@@ -74,7 +74,7 @@ export const postsAPI = {
 
   async getPostStatus(limit: number = 20) {
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/post/status?limit=${limit}`)
+    const response = await fetch(`${baseUrl}/api/post/status`)
     if (!response.ok) {
       throw new Error('Failed to fetch post status')
     }
@@ -83,7 +83,7 @@ export const postsAPI = {
 
   async testPost(content: string) {
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/test/post`, {
+    const response = await fetch(`${baseUrl}/api/test/post`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -101,7 +101,7 @@ export const postsAPI = {
 export const errorLogsAPI = {
   async getErrorLogs(limit: number = 10) {
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/errors/logs?limit=${limit}`)
+    const response = await fetch(`${baseUrl}/api/errors/logs?limit=${limit}`)
     if (!response.ok) {
       throw new Error('Failed to fetch error logs')
     }
@@ -110,7 +110,7 @@ export const errorLogsAPI = {
 
   async clearErrorLogs() {
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/errors/logs`, {
+    const response = await fetch(`${baseUrl}/api/errors/logs`, {
       method: 'DELETE'
     })
     if (!response.ok) {
