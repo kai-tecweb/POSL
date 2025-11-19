@@ -42,11 +42,23 @@ app.put("/dev/settings/post-time", async (req, res) => {
     );
     
     // Cron自動更新
+    // 注意: サーバーがUTCで動作している場合、JSTからUTCへの変換が必要
+    // サーバーがJSTで動作している場合は、そのままhourを使用
     const cronMinute = parseInt(minute);
+    // JST (UTC+9) から UTC への変換: (hour - 9 + 24) % 24
+    // サーバーのタイムゾーンに応じて調整が必要な場合があります
     const cronHour = (parseInt(hour) - 9 + 24) % 24;
     const cronCmd = `${cronMinute} ${cronHour} * * * /home/ubuntu/enhanced-auto-post.sh`;
     
-    exec(`(crontab -l 2>/dev/null | grep -v enhanced-auto-post; echo "${cronCmd}") | crontab -`);
+    console.log(`📅 Cron設定: JST ${hour}:${String(minute).padStart(2, "0")} → UTC ${cronHour}:${String(cronMinute).padStart(2, "0")}`);
+    
+    exec(`(crontab -l 2>/dev/null | grep -v enhanced-auto-post; echo "${cronCmd}") | crontab -`, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`❌ Cron設定エラー: ${error.message}`);
+      } else {
+        console.log(`✅ Cron設定成功: ${cronCmd}`);
+      }
+    });
     
     await connection.end();
     

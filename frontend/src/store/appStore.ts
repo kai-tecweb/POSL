@@ -183,7 +183,15 @@ export const useAppStore = create<AppStore>()(
       savePostTime: async (settings) => {
         try {
           set({ loading: true })
-          await settingsAPI.updateSettings('post-time', settings)
+          // time (HH:MM) を hour と minute に変換
+          const [hour, minute] = settings.time.split(':').map(Number)
+          const apiData = {
+            hour,
+            minute,
+            timezone: settings.timezone,
+            enabled: settings.enabled
+          }
+          await settingsAPI.updateSettings('post-time', apiData)
           set({ postTime: settings, loading: false })
         } catch (error) {
           set({ 
@@ -263,7 +271,17 @@ export const useAppStore = create<AppStore>()(
         try {
           set({ loading: true })
           const response = await settingsAPI.getSettings('post-time')
-          set({ postTime: response.data, loading: false })
+          // hour と minute を time (HH:MM) に変換
+          const data = response.data
+          const time = `${String(data.hour).padStart(2, '0')}:${String(data.minute).padStart(2, '0')}`
+          set({ 
+            postTime: {
+              enabled: data.enabled ?? true,
+              time,
+              timezone: data.timezone || 'Asia/Tokyo'
+            }, 
+            loading: false 
+          })
         } catch (error) {
           set({ 
             error: '投稿時間設定の読み込みに失敗しました', 

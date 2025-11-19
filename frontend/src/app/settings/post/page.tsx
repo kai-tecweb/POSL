@@ -6,15 +6,20 @@ import { Card, Button, Input } from '@/components'
 import Layout from '@/components/Layout'
 
 const PostSettings = () => {
-  const { postTime, updatePostTime, loading, error } = useAppStore()
+  const { postTime, savePostTime, loading, error } = useAppStore()
   const [formData, setFormData] = useState(postTime)
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
 
-  const handleSave = () => {
-    updatePostTime(formData)
-    setTestResult('設定を保存しました')
-    setTimeout(() => setTestResult(null), 3000)
+  const handleSave = async () => {
+    try {
+      await savePostTime(formData)
+      setTestResult('設定を保存しました')
+      setTimeout(() => setTestResult(null), 3000)
+    } catch (error) {
+      setTestResult('設定の保存に失敗しました')
+      setTimeout(() => setTestResult(null), 3000)
+    }
   }
 
   const handleTestConnection = async () => {
