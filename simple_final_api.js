@@ -1116,44 +1116,19 @@ ${templateDesc}
     if (promptSettings.creativity_level !== undefined) {
       const creativity = promptSettings.creativity_level / 100;
       if (creativity <= 0.3) {
-        userPrompt += `創造性レベル: テンプレとルールに忠実に、変化少なめで作成してください。\n\n`;
+        userPrompt += `創造性レベル: テンプレとルールに忠実に、変化少なめで作成してください。ただし、以前の投稿とは異なる内容にしてください。\n\n`;
       } else if (creativity <= 0.7) {
-        userPrompt += `創造性レベル: ルール守りつつ、言い回しなどは柔軟に作成してください。\n\n`;
+        userPrompt += `創造性レベル: ルール守りつつ、言い回しなどは柔軟に作成してください。以前の投稿とは異なる視点や表現を使ってください。\n\n`;
       } else {
-        userPrompt += `創造性レベル: ルールをベースにしつつ、比喩や展開に自由度を持たせて作成してください。\n\n`;
+        userPrompt += `創造性レベル: ルールをベースにしつつ、比喩や展開に自由度を持たせて作成してください。以前の投稿とは完全に異なる創造的な内容にしてください。\n\n`;
       }
-    }
-  }
-
-  // 最近の投稿履歴を反映（類似投稿を避けるため）
-  if (recentPosts && recentPosts.length > 0) {
-    const recentContents = recentPosts
-      .map(p => {
-        try {
-          const content = typeof p.content === 'string' ? JSON.parse(p.content) : p.content;
-          return typeof content === 'string' ? content : '';
-        } catch {
-          return '';
-        }
-      })
-      .filter(c => c && c.length > 0)
-      .slice(0, 3);
-    
-    if (recentContents.length > 0) {
-      userPrompt += `# 重要：投稿の多様性を確保
-以下の最近の投稿とは異なる内容・視点・表現で投稿を作成してください。同じテーマやキーワードを繰り返さないようにしてください。
-`;
-      recentContents.forEach((content, index) => {
-        const shortContent = content.length > 80 ? content.substring(0, 80) + '...' : content;
-        userPrompt += `${index + 1}. ${shortContent}\n`;
-      });
-      userPrompt += "\n";
     }
   }
 
   userPrompt += `# 出力フォーマット
 - Xにそのまま投稿できる本文だけを出力してください。
-- 前後に説明文やラベルはつけず、日本語の文章1本のみを出力してください。`;
+- 前後に説明文やラベルはつけず、日本語の文章1本のみを出力してください。
+- **重要**: 以前の投稿とは完全に異なる内容・視点・表現で投稿を作成してください。`;
 
   return { systemPrompt, userPrompt };
 }
