@@ -7,32 +7,66 @@ import Layout from '@/components/Layout'
 
 const PostSettings = () => {
   const { postTime, savePostTime, loadPostTime, loading, error } = useAppStore()
-  const [formData, setFormData] = useState(postTime)
+  const [formData, setFormData] = useState<typeof postTime | null>(null)
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
 
-  // 初期化時にデータを読み込む
+  // 初期化時にデータを読み込む（マウント時のみ実行）
   useEffect(() => {
+    let isMounted = true
+    
     const initialize = async () => {
       try {
+        // データベースから設定を読み込む
         await loadPostTime()
-        setIsInitialized(true)
+        
+        // Zustandの更新を待つ（postTimeが更新されるまで待機）
+        let retryCount = 0
+        const maxRetries = 10
+        while (retryCount < maxRetries && isMounted) {
+          const currentPostTime = useAppStore.getState().postTime
+          // デフォルト値（20:00）でない場合は読み込み完了とみなす
+          if (currentPostTime && currentPostTime.time && currentPostTime.time !== '20:00') {
+            setFormData(currentPostTime)
+            setIsInitialized(true)
+            return
+          }
+          // まだデフォルト値の場合は少し待って再試行
+          await new Promise(resolve => setTimeout(resolve, 100))
+          retryCount++
+        }
+        
+        // タイムアウトした場合は現在の値を設定
+        if (isMounted) {
+          const currentPostTime = useAppStore.getState().postTime
+          setFormData(currentPostTime)
+          setIsInitialized(true)
+        }
       } catch (err) {
         console.warn('投稿時刻設定の読み込みに失敗しました:', err)
-        // エラーが発生してもデフォルト値で続行
-        setIsInitialized(true)
+        // エラーが発生しても現在のpostTimeで続行
+        if (isMounted) {
+          const currentPostTime = useAppStore.getState().postTime
+          setFormData(currentPostTime || { enabled: false, time: '20:00', timezone: 'Asia/Tokyo' })
+          setIsInitialized(true)
+        }
       }
     }
+    
     initialize()
-  }, [loadPostTime])
+    
+    return () => {
+      isMounted = false
+    }
+  }, [loadPostTime]) // loadPostTimeを依存配列に含める（ただし、Zustandの関数は安定しているはず）
 
-  // postTimeが更新されたらformDataも更新
+  // postTimeが更新されたらformDataも更新（初期化後のみ、かつデフォルト値でない場合）
   useEffect(() => {
-    if (postTime && postTime.time) {
+    if (isInitialized && postTime && postTime.time && postTime.time !== '20:00') {
       setFormData(postTime)
     }
-  }, [postTime])
+  }, [postTime, isInitialized])
 
   const handleSave = async () => {
     try {
@@ -70,7 +104,7 @@ const PostSettings = () => {
   ]
 
   // 初期化中はローディング表示
-  if (!isInitialized) {
+  if (!isInitialized || !formData) {
     return (
       <Layout>
         <div className="max-w-4xl mx-auto">
