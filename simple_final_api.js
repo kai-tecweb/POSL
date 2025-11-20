@@ -86,8 +86,18 @@ app.put("/dev/settings/post-time", async (req, res) => {
           stdio: ['pipe', 'pipe', 'pipe']
         });
         
+        // stdinに書き込み
         writeCron.stdin.write(newCronContent);
         writeCron.stdin.end();
+        
+        // タイムアウト設定（10秒）
+        const timeout = setTimeout(() => {
+          writeCron.kill();
+          reject(new Error('Cron設定の書き込みがタイムアウトしました'));
+        }, 10000);
+        
+        writeCron.on('close', (code) => {
+          clearTimeout(timeout);
         
         let writeError = '';
         let writeOutput = '';
