@@ -1,27 +1,14 @@
-// API endpoints - 本番環境対応版（修正版）
+// API endpoints - 本番環境対応版（完全版）
 const getApiBaseUrl = () => {
   // ブラウザ環境でない場合（SSR）
   if (typeof window === 'undefined') {
-    // サーバーサイドでは環境変数から取得、なければ本番用デフォルト
-    return process.env.NEXT_PUBLIC_API_URL || '/api'
+    // サーバーサイドでは環境変数から取得、なければ相対パスを使用
+    return process.env.NEXT_PUBLIC_API_URL || ''
   }
   
-  // ブラウザ環境での判定
-  const hostname = window.location.hostname
-  console.log('Current hostname:', hostname) // デバッグログ
-  
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    // ローカル開発環境
-    console.log('Using localhost API')
-    return 'http://localhost:3001'
-  } else {
-    // 本番環境 - 現在のホストの /api を使用
-    const protocol = window.location.protocol
-    const host = window.location.host
-    const apiUrl = `${protocol}//${host}/api`
-    console.log('Using production API:', apiUrl)
-    return apiUrl
-  }
+  // ブラウザ環境では常に相対パスを使用（Nginxがプロキシするため）
+  // /dev/エンドポイントの場合は/dev、それ以外は/apiを使用
+  return ''
 }
 
 // エラーハンドリング用のユーティリティ
@@ -46,8 +33,39 @@ const handleApiError = async (response: Response) => {
 
 // 共通のfetch wrapper
 const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
-  const baseUrl = getApiBaseUrl()
-  const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`
+  // エンドポイントが既に完全なURLの場合はそのまま使用
+  if (endpoint.startsWith('http')) {
+    const url = endpoint
+    console.log('API Request (absolute URL):', {
+      method: options.method || 'GET',
+      url: url
+    })
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...options.headers
+      },
+      credentials: 'same-origin',
+      ...options
+    })
+    await handleApiError(response)
+    const contentType = response.headers.get('content-type')
+    if (contentType && contentType.includes('application/json')) {
+      const text = await response.text()
+      if (!text) return null
+      try {
+        return JSON.parse(text)
+      } catch {
+        return text
+      }
+    } else {
+      return await response.text()
+    }
+  }
+  
+  // 相対パスの場合はそのまま使用（Nginxが適切にプロキシする）
+  const url = endpoint
   
   console.log('API Request:', {
     method: options.method || 'GET',
