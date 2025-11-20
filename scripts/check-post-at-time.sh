@@ -29,17 +29,22 @@ CURRENT_JST_TIME="${CURRENT_JST_HOUR}:${CURRENT_JST_MINUTE}"
 echo "現在時刻: UTC ${CURRENT_UTC_TIME} / JST ${CURRENT_JST_TIME}"
 echo ""
 
-# 時刻の比較
-TARGET_UTC_TIME="${UTC_HOUR}:${UTC_MINUTE}"
-if [ "$CURRENT_UTC_TIME" \< "$TARGET_UTC_TIME" ]; then
+# 時刻の比較（数値として比較）
+CURRENT_UTC_MINUTES=$((CURRENT_UTC_HOUR * 60 + CURRENT_UTC_MINUTE))
+TARGET_UTC_MINUTES=$((UTC_HOUR * 60 + UTC_MINUTE))
+TARGET_UTC_TIME=$(printf "%02d:%02d" $UTC_HOUR $UTC_MINUTE)
+
+if [ $CURRENT_UTC_MINUTES -lt $TARGET_UTC_MINUTES ]; then
     echo "⏳ まだ実行時刻前です"
     echo "   実行予定: UTC ${TARGET_UTC_TIME} (JST ${TARGET_HOUR}:${TARGET_MINUTE})"
+    echo "   残り時間: $(( (TARGET_UTC_MINUTES - CURRENT_UTC_MINUTES) / 60 ))時間$(( (TARGET_UTC_MINUTES - CURRENT_UTC_MINUTES) % 60 ))分"
     exit 0
-elif [ "$CURRENT_UTC_TIME" = "$TARGET_UTC_TIME" ]; then
+elif [ $CURRENT_UTC_MINUTES -eq $TARGET_UTC_MINUTES ]; then
     echo "🕐 ちょうど実行時刻です"
     echo "   実行中または実行直後です"
-elif [ "$CURRENT_UTC_TIME" \> "$TARGET_UTC_TIME" ]; then
-    echo "✅ 実行時刻を過ぎています"
+elif [ $CURRENT_UTC_MINUTES -gt $TARGET_UTC_MINUTES ]; then
+    DIFF_MINUTES=$((CURRENT_UTC_MINUTES - TARGET_UTC_MINUTES))
+    echo "✅ 実行時刻を過ぎています（${DIFF_MINUTES}分経過）"
     echo "   実行時刻: UTC ${TARGET_UTC_TIME} (JST ${TARGET_HOUR}:${TARGET_MINUTE})"
 fi
 echo ""
@@ -58,12 +63,21 @@ else
     CRON_MIN=$(echo "$CRON_JOB" | awk '{print $1}')
     CRON_HR=$(echo "$CRON_JOB" | awk '{print $2}')
     
-    if [ "$CRON_MIN" = "$UTC_MINUTE" ] && [ "$CRON_HR" = "$UTC_HOUR" ]; then
+    # 数値として比較（先頭の0を考慮）
+    CRON_MIN_NUM=$((10#$CRON_MIN))
+    CRON_HR_NUM=$((10#$CRON_HR))
+    UTC_MIN_NUM=$((10#$UTC_MINUTE))
+    UTC_HR_NUM=$((10#$UTC_HOUR))
+    
+    if [ "$CRON_MIN_NUM" -eq "$UTC_MIN_NUM" ] && [ "$CRON_HR_NUM" -eq "$UTC_HR_NUM" ]; then
         echo "   ✅ 時刻も正しく設定されています"
     else
         echo "   ⚠ 時刻が異なります"
-        echo "      期待: ${UTC_MINUTE} ${UTC_HOUR}"
-        echo "      実際: ${CRON_MIN} ${CRON_HR}"
+        echo "      期待: ${UTC_MINUTE} ${UTC_HOUR} (UTC) = ${TARGET_HOUR}:${TARGET_MINUTE} (JST)"
+        echo "      実際: ${CRON_MIN} ${CRON_HR} (UTC) = $(( (CRON_HR_NUM + 9) % 24 )):${CRON_MIN} (JST)"
+        echo "   → 手動で修正してください:"
+        echo "     crontab -e"
+        echo "     ${UTC_MINUTE} ${UTC_HOUR} * * * /home/ubuntu/enhanced-auto-post.sh >> /home/ubuntu/auto-post.log 2>&1"
     fi
 fi
 echo ""
