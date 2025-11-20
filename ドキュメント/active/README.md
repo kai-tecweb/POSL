@@ -29,6 +29,7 @@
 - **`CI-CD-Pipeline設計書.md`** - CI/CDパイプライン仕様
 - **`CI-CD-Implementation-Notes.md`** - CI/CD実装ノート
 - **`本番環境移行完了レポート.md`** - 本番環境移行記録
+- **`コーディング規約.md`** ⭐ **NEW** - プロジェクトのコーディング規約・標準
 
 #### 📁 サブディレクトリ
 - **`aws-deployment/`** - AWS環境構築・デプロイ関連
