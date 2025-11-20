@@ -63,22 +63,36 @@ app.put("/dev/settings/post-time", async (req, res) => {
     
     // cron設定を同期的に実行してエラーを確実に検出
     return new Promise((resolve, reject) => {
-      exec(`(crontab -l 2>/dev/null | grep -v enhanced-auto-post; echo "${cronCmd}") | crontab -`, (error, stdout, stderr) => {
+      // cron設定コマンドを実行
+      const setCronCmd = `(crontab -l 2>/dev/null | grep -v enhanced-auto-post || true; echo "${cronCmd}") | crontab -`;
+      console.log(`📅 Cron設定コマンド実行: ${setCronCmd}`);
+      
+      exec(setCronCmd, { timeout: 5000 }, (error, stdout, stderr) => {
         if (error) {
           console.error(`❌ Cron設定エラー: ${error.message}`);
           console.error(`❌ stderr: ${stderr}`);
+          console.error(`❌ stdout: ${stdout}`);
           // cron設定エラーでもDB保存は成功しているので、警告として記録
-          console.warn(`⚠ Cron設定に失敗しましたが、データベースには保存されました。手動でcronを設定してください: ${cronCmd}`);
+          console.warn(`⚠ Cron設定に失敗しましたが、データベースには保存されました。`);
+          console.warn(`⚠ 手動でcronを設定してください: ${cronCmd}`);
+          console.warn(`⚠ または、scripts/fix-cron-immediately.sh を実行してください`);
         } else {
-          console.log(`✅ Cron設定成功: ${cronCmd}`);
-          // 設定確認のため、実際のcron設定を確認
-          exec('crontab -l | grep enhanced-auto-post', (checkError, checkStdout) => {
-            if (checkError) {
-              console.warn(`⚠ Cron設定の確認に失敗: ${checkError.message}`);
-            } else {
-              console.log(`✅ Cron設定確認: ${checkStdout.trim()}`);
-            }
-          });
+          console.log(`✅ Cron設定コマンド実行成功`);
+          console.log(`📅 stdout: ${stdout}`);
+          
+          // 設定確認のため、実際のcron設定を確認（少し待ってから）
+          setTimeout(() => {
+            exec('crontab -l 2>/dev/null | grep enhanced-auto-post', (checkError, checkStdout, checkStderr) => {
+              if (checkError) {
+                console.warn(`⚠ Cron設定の確認に失敗: ${checkError.message}`);
+                console.warn(`⚠ stderr: ${checkStderr}`);
+              } else if (checkStdout && checkStdout.trim()) {
+                console.log(`✅ Cron設定確認成功: ${checkStdout.trim()}`);
+              } else {
+                console.warn(`⚠ Cron設定が見つかりません（確認失敗）`);
+              }
+            });
+          }, 500);
         }
         resolve(); // エラーでもresolve（DB保存は成功しているため）
       });
