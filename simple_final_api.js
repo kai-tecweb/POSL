@@ -549,13 +549,22 @@ function getTodayWeekTheme(weekThemeSettings) {
 // プロンプト生成関数
 async function generatePromptWithSettings(connection, userId) {
   // 設定を取得
-  const [weekThemeSettings, toneSettings, promptSettings, personaProfile, recentDiaries] = await Promise.all([
+  const [weekThemeSettings, toneSettings, promptSettings, personaProfile, recentDiaries, eventSettings, trendSettings, templateSettings] = await Promise.all([
     getSetting(connection, userId, 'week-theme'),
     getSetting(connection, userId, 'tone'),
     getSetting(connection, userId, 'prompt'),
     getPersonaProfile(connection, userId),
-    getRecentDiaries(connection, userId, 3)
+    getRecentDiaries(connection, userId, 3),
+    getSetting(connection, userId, 'event'),
+    getSetting(connection, userId, 'trend'),
+    getSetting(connection, userId, 'template')
   ]);
+
+  // 最近の投稿履歴を取得（類似投稿を避けるため）
+  const [recentPosts] = await connection.execute(
+    "SELECT JSON_EXTRACT(post_data, '$.content') as content FROM post_logs WHERE user_id = ? AND JSON_EXTRACT(post_data, '$.content') IS NOT NULL ORDER BY created_at DESC LIMIT 5",
+    [userId]
+  );
 
   // 今日の曜日テーマ
   const todayTheme = getTodayWeekTheme(weekThemeSettings);
@@ -689,8 +698,9 @@ async function generatePromptWithSettings(connection, userId) {
 
   // テンプレート情報を反映（プロンプト設計書の要件）
   if (templateSettings && templateSettings.enabled_templates && templateSettings.enabled_templates.length > 0) {
-    // 優先度の高いテンプレートを選択（簡易実装）
-    const selectedTemplate = templateSettings.enabled_templates[0];
+    // ランダムにテンプレートを選択（多様性を確保）
+    const randomIndex = Math.floor(Math.random() * templateSettings.enabled_templates.length);
+    const selectedTemplate = templateSettings.enabled_templates[randomIndex];
     userPrompt += `【使用テンプレート】\n${selectedTemplate}の構造を参考にしてください。\n\n`;
   }
 
@@ -740,7 +750,31 @@ async function generatePromptWithSettings(connection, userId) {
     }
   }
 
-  userPrompt += `上記の情報を踏まえて、自然で魅力的な投稿文を生成してください。`;
+  // 最近の投稿履歴を反映（類似投稿を避けるため）
+  if (recentPosts && recentPosts.length > 0) {
+    const recentContents = recentPosts
+      .map(p => {
+        try {
+          const content = typeof p.content === 'string' ? JSON.parse(p.content) : p.content;
+          return typeof content === 'string' ? content : '';
+        } catch {
+          return '';
+        }
+      })
+      .filter(c => c && c.length > 0)
+      .slice(0, 3);
+    
+    if (recentContents.length > 0) {
+      userPrompt += `【重要：投稿の多様性を確保】\n以下の最近の投稿とは異なる内容・視点・表現で投稿を作成してください。同じテーマやキーワードを繰り返さないようにしてください。\n`;
+      recentContents.forEach((content, index) => {
+        const shortContent = content.length > 80 ? content.substring(0, 80) + '...' : content;
+        userPrompt += `${index + 1}. ${shortContent}\n`;
+      });
+      userPrompt += `\n`;
+    }
+  }
+
+  userPrompt += `上記の情報を踏まえて、自然で魅力的で、以前の投稿とは異なる視点や表現を使った投稿文を生成してください。`;
 
   return { systemPrompt, userPrompt };
 }
@@ -762,7 +796,7 @@ app.post("/dev/post/ai-with-x", async (req, res) => {
     console.log(`System: ${systemPrompt.substring(0, 100)}...`);
     console.log(`User: ${userPrompt.substring(0, 100)}...`);
     
-    // OpenAIで投稿文生成
+    // OpenAIで投稿文生成（多様性を高めるためtemperatureを上げる）
     const openai = getOpenAIClient();
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
@@ -771,7 +805,8 @@ app.post("/dev/post/ai-with-x", async (req, res) => {
         { role: "user", content: userPrompt }
       ],
       max_tokens: 200,
-      temperature: 0.8
+      temperature: 0.95, // 0.8 → 0.95に変更（多様性を高める）
+      top_p: 0.9 // 多様性をさらに高める
     });
     
     const content = completion.choices[0]?.message?.content?.trim() || "";
