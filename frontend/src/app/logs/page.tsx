@@ -24,7 +24,7 @@ export default function LogsPage() {
     const fetchLogs = async () => {
       try {
         setLoading(true)
-        const response = await postsAPI.getPostLogs(10)
+        const response = await postsAPI.getPosts(10)
         console.log('Logs API response:', response)
         
         if (response.success && response.data) {

@@ -137,10 +137,15 @@ export const useAppStore = create<AppStore>()(
       loading: false,
       error: null,
 
-      // Initialize settings from backend on startup
+      // Initialize settings from backend on startup (非同期でエラーを無視)
       initialize: async () => {
-        const { loadAllSettings } = get()
-        await loadAllSettings()
+        try {
+          const { loadAllSettings } = get()
+          await loadAllSettings()
+        } catch (error) {
+          console.warn('Settings initialization failed, continuing with defaults:', error)
+          // エラーを無視して続行 - 設定APIが失敗してもダッシュボード表示は継続
+        }
       },
 
       // Settings actions
@@ -360,7 +365,8 @@ export const useAppStore = create<AppStore>()(
         
         try {
           set({ loading: true })
-          await Promise.allSettled([
+          // Promise.allSettledを使用してエラーがあっても他の設定読み込みを継続
+          const results = await Promise.allSettled([
             loadPostTime(),
             loadWeekTheme(), 
             loadTrend(),
@@ -368,10 +374,18 @@ export const useAppStore = create<AppStore>()(
             loadTemplate(),
             loadPrompt()
           ])
+          
+          // 失敗した設定をログ出力（ただしエラーとして扱わない）
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.warn(`設定読み込み失敗 (index ${index}):`, result.reason)
+            }
+          })
+          
           set({ loading: false })
         } catch (error) {
+          console.warn('設定の読み込みでエラーが発生しましたが、デフォルト値で継続します:', error)
           set({ 
-            error: '設定の読み込みに失敗しました', 
             loading: false 
           })
         }
@@ -382,8 +396,8 @@ export const useAppStore = create<AppStore>()(
         console.log('fetchTrends called - starting trend fetch')
         try {
           set({ loading: true })
-          console.log('Making API call to trendsAPI.fetchTrends()')
-          const response = await trendsAPI.fetchTrends()
+          console.log('Making API call to trendsAPI.getTrends()')
+          const response = await trendsAPI.getTrends()
           console.log('API response received:', response)
           
           // Transform Google Trends response to TrendData format
@@ -437,7 +451,23 @@ export const useAppStore = create<AppStore>()(
       fetchPostLogs: async () => {
         set({ loading: true })
         try {
-          // TODO: Implement API call
+          console.log('Making API call to postsAPI.getPosts()')
+          const response = await postsAPI.getPosts()
+          console.log('Post logs API response:', response)
+          
+          // Transform API response to PostLog format
+          const postLogs: PostLog[] = response.data?.posts?.map((post: any) => ({
+            id: post.postId || post.id,
+            content: post.content || 'コンテンツなし',
+            createdAt: post.createdAt || post.timestamp,
+            platform: 'x',
+            status: post.success ? 'success' : 'error'
+          })) || []
+          
+          set({ postLogs, loading: false })
+        } catch (error) {
+          console.error('Failed to fetch post logs:', error)
+          // Fallback to mock data
           const mockLogs: PostLog[] = [
             {
               id: '1',
@@ -448,10 +478,9 @@ export const useAppStore = create<AppStore>()(
             }
           ]
           
-          set({ postLogs: mockLogs, loading: false })
-        } catch (error) {
           set({ 
-            error: '投稿ログの取得に失敗しました', 
+            postLogs: mockLogs, 
+            error: '投稿ログの取得に失敗しました（モックデータを表示中）',
             loading: false 
           })
         }
