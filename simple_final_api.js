@@ -741,8 +741,8 @@ async function generatePromptWithSettings(connection, userId) {
 ▼文量・形式
 - 140文字前後を目安とし、最大でも280文字以内に収めてください。`;
   
-  // 絵文字ルール（emoji_levelに応じて）
-  const emojiLevel = toneSettings?.emoji_level !== undefined ? toneSettings.emoji_level / 100 : 0.3;
+  // 絵文字ルール（emoji_levelに応じて）- toneSettingsの後に処理
+  let emojiLevel = 0.3; // デフォルト値
   if (emojiLevel === 0) {
     systemPrompt += `\n- 絵文字は使わないでください。`;
   } else if (emojiLevel <= 0.4) {
@@ -794,6 +794,27 @@ async function generatePromptWithSettings(connection, userId) {
 ▼NG事項
 - 暴力、差別、政治、宗教、誹謗中傷に関する内容は書かないでください。`;
 
+  // 絵文字レベルを取得
+  if (toneSettings && toneSettings.emoji_level !== undefined) {
+    emojiLevel = toneSettings.emoji_level / 100;
+  }
+  
+  // 絵文字ルールを追加
+  if (emojiLevel === 0) {
+    systemPrompt += `\n- 絵文字は使わないでください。`;
+  } else if (emojiLevel <= 0.4) {
+    systemPrompt += `\n- 絵文字は使っても1個までにしてください。`;
+  } else if (emojiLevel <= 0.7) {
+    systemPrompt += `\n- 絵文字は2個までにしてください。`;
+  } else {
+    systemPrompt += `\n- 絵文字は最大3個までにしてください。使いすぎないでください。`;
+  }
+  
+  systemPrompt += `\n- ハッシュタグやURLは今回のバージョンでは基本的に使わないでください。
+
+▼文体・口調
+- 「です・ます調」で統一してください。`;
+  
   // トーン設定を反映（プロンプト設計書に従って数値を人間に分かる指示に変換）
   if (toneSettings) {
     const toneDesc = [];
