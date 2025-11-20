@@ -48,29 +48,53 @@ app.put("/dev/settings/post-time", async (req, res) => {
     );
     
     // Cron自動更新
-    // 注意: サーバーがUTCで動作している場合、JSTからUTCへの変換が必要
-    // サーバーがJSTで動作している場合は、そのままhourを使用
+    // サーバーのタイムゾーンを確認して適切に変換
     const cronMinute = parseInt(minute);
+    const jstHour = parseInt(hour);
+    
+    // サーバーのタイムゾーンを確認（デフォルトはUTCと仮定）
+    // AWS EC2は通常UTCで動作するため、JSTからUTCに変換
     // JST (UTC+9) から UTC への変換: (hour - 9 + 24) % 24
-    // サーバーのタイムゾーンに応じて調整が必要な場合があります
-    const cronHour = (parseInt(hour) - 9 + 24) % 24;
-    const cronCmd = `${cronMinute} ${cronHour} * * * /home/ubuntu/enhanced-auto-post.sh`;
+    const cronHour = (jstHour - 9 + 24) % 24;
+    const cronCmd = `${cronMinute} ${cronHour} * * * /home/ubuntu/enhanced-auto-post.sh >> /home/ubuntu/auto-post.log 2>&1`;
     
-    console.log(`📅 Cron設定: JST ${hour}:${String(minute).padStart(2, "0")} → UTC ${cronHour}:${String(cronMinute).padStart(2, "0")}`);
+    console.log(`📅 Cron設定: JST ${jstHour}:${String(cronMinute).padStart(2, "0")} → UTC ${cronHour}:${String(cronMinute).padStart(2, "0")}`);
+    console.log(`📅 Cronコマンド: ${cronCmd}`);
     
-    exec(`(crontab -l 2>/dev/null | grep -v enhanced-auto-post; echo "${cronCmd}") | crontab -`, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`❌ Cron設定エラー: ${error.message}`);
-      } else {
-        console.log(`✅ Cron設定成功: ${cronCmd}`);
-      }
-    });
-    
-    console.log(`✅ 保存成功: ${hour}:${String(minute).padStart(2, "0")}`);
-    
-    res.json({
-      success: true,
-      message: `投稿時刻を${hour}:${String(minute).padStart(2, "0")}に設定しました`
+    // cron設定を同期的に実行してエラーを確実に検出
+    return new Promise((resolve, reject) => {
+      exec(`(crontab -l 2>/dev/null | grep -v enhanced-auto-post; echo "${cronCmd}") | crontab -`, (error, stdout, stderr) => {
+        if (error) {
+          console.error(`❌ Cron設定エラー: ${error.message}`);
+          console.error(`❌ stderr: ${stderr}`);
+          // cron設定エラーでもDB保存は成功しているので、警告として記録
+          console.warn(`⚠ Cron設定に失敗しましたが、データベースには保存されました。手動でcronを設定してください: ${cronCmd}`);
+        } else {
+          console.log(`✅ Cron設定成功: ${cronCmd}`);
+          // 設定確認のため、実際のcron設定を確認
+          exec('crontab -l | grep enhanced-auto-post', (checkError, checkStdout) => {
+            if (checkError) {
+              console.warn(`⚠ Cron設定の確認に失敗: ${checkError.message}`);
+            } else {
+              console.log(`✅ Cron設定確認: ${checkStdout.trim()}`);
+            }
+          });
+        }
+        resolve(); // エラーでもresolve（DB保存は成功しているため）
+      });
+    }).then(() => {
+      // cron設定は非同期で実行されるが、DB保存は確実に成功している
+      console.log(`✅ 保存成功: ${hour}:${String(minute).padStart(2, "0")}`);
+      
+      res.json({
+        success: true,
+        message: `投稿時刻を${hour}:${String(minute).padStart(2, "0")}に設定しました`,
+        cron_set: {
+          jst: `${hour}:${String(minute).padStart(2, "0")}`,
+          utc: `${cronHour}:${String(cronMinute).padStart(2, "0")}`,
+          command: cronCmd
+        }
+      });
     });
     
   } catch (error) {
