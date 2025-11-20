@@ -14,7 +14,7 @@ import type {
   PostLog,
   DiaryEntry
 } from '@/types'
-import { settingsAPI, trendsAPI, postsAPI } from '@/utils/api'
+import { settingsAPI, trendsAPI, postsAPI, diaryAPI, personaAPI } from '@/utils/api'
 
 interface AppStore extends AppState {
   // Settings actions
@@ -489,12 +489,31 @@ export const useAppStore = create<AppStore>()(
       fetchDiaryEntries: async () => {
         set({ loading: true })
         try {
-          // TODO: Implement API call
-          const mockEntries: DiaryEntry[] = []
+          const response = await diaryAPI.getDiaries('demo', 20)
           
-          set({ diaryEntries: mockEntries, loading: false })
+          if (response.success && response.data) {
+            const entries: DiaryEntry[] = response.data.map((diary: any) => ({
+              id: diary.id,
+              filename: diary.id,
+              originalFilename: diary.data?.title || '音声日記',
+              uploadedAt: diary.createdAt || new Date().toISOString(),
+              transcriptionStatus: diary.data?.transcription_status || 'completed',
+              fileSize: 0,
+              content: diary.content || ''
+            }))
+            
+            set({ diaryEntries: entries, loading: false })
+          } else {
+            set({ 
+              diaryEntries: [],
+              error: response.error || '日記データの取得に失敗しました',
+              loading: false 
+            })
+          }
         } catch (error) {
+          console.error('日記データ取得エラー:', error)
           set({ 
+            diaryEntries: [],
             error: '日記データの取得に失敗しました', 
             loading: false 
           })
@@ -505,21 +524,65 @@ export const useAppStore = create<AppStore>()(
       uploadDiary: async (file: File) => {
         set({ loading: true })
         try {
-          // TODO: Implement file upload API call
-          const newEntry: DiaryEntry = {
-            id: Date.now().toString(),
+          // ファイルをBase64エンコード
+          const reader = new FileReader()
+          const audioData = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const result = reader.result as string
+              // data:audio/mp3;base64, の部分を取得
+              resolve(result)
+            }
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          })
+          
+          // 一時的なエントリを追加（アップロード中表示用）
+          const tempEntry: DiaryEntry = {
+            id: `temp_${Date.now()}`,
             filename: `diary_${Date.now()}.mp3`,
             originalFilename: file.name,
             uploadedAt: new Date().toISOString(),
-            transcriptionStatus: 'pending',
+            transcriptionStatus: 'processing',
             fileSize: file.size
           }
           
           set((state) => ({
-            diaryEntries: [...state.diaryEntries, newEntry],
-            loading: false
+            diaryEntries: [tempEntry, ...state.diaryEntries],
+            loading: true
           }))
+          
+          // API呼び出し
+          const response = await diaryAPI.transcribeAudio(audioData)
+          
+          if (response.success && response.data) {
+            // 成功時: 一時エントリを削除して、実際のエントリを追加
+            const newEntry: DiaryEntry = {
+              id: response.data.diaryId,
+              filename: response.data.diaryId,
+              originalFilename: file.name,
+              uploadedAt: response.data.timestamp || new Date().toISOString(),
+              transcriptionStatus: 'completed',
+              fileSize: file.size,
+              content: response.data.transcription || ''
+            }
+            
+            set((state) => ({
+              diaryEntries: [
+                newEntry,
+                ...state.diaryEntries.filter(e => e.id !== tempEntry.id)
+              ],
+              loading: false
+            }))
+          } else {
+            // 失敗時: 一時エントリを削除
+            set((state) => ({
+              diaryEntries: state.diaryEntries.filter(e => e.id !== tempEntry.id),
+              error: response.error || '音声ファイルのアップロードに失敗しました',
+              loading: false
+            }))
+          }
         } catch (error) {
+          console.error('音声ファイルアップロードエラー:', error)
           set({ 
             error: '音声ファイルのアップロードに失敗しました', 
             loading: false 
@@ -530,12 +593,21 @@ export const useAppStore = create<AppStore>()(
       deleteDiary: async (id: string) => {
         set({ loading: true })
         try {
-          // TODO: Implement delete API call
-          set((state) => ({
-            diaryEntries: state.diaryEntries.filter(entry => entry.id !== id),
-            loading: false
-          }))
+          const response = await diaryAPI.deleteDiary(id, 'demo')
+          
+          if (response.success) {
+            set((state) => ({
+              diaryEntries: state.diaryEntries.filter(entry => entry.id !== id),
+              loading: false
+            }))
+          } else {
+            set({ 
+              error: response.error || '日記の削除に失敗しました',
+              loading: false 
+            })
+          }
         } catch (error) {
+          console.error('日記削除エラー:', error)
           set({ 
             error: '日記の削除に失敗しました', 
             loading: false 

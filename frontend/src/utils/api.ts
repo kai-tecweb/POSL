@@ -164,6 +164,41 @@ export const healthAPI = {
   }
 }
 
+// API utility functions for diary
+export const diaryAPI = {
+  async transcribeAudio(audioData: string, audioUrl?: string) {
+    console.log('Transcribing audio')
+    return await apiRequest('/api/diary/transcribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: 'demo',
+        audioData: audioData,
+        audioUrl: audioUrl
+      })
+    })
+  },
+
+  async getDiaries(userId: string = 'demo', limit: number = 10) {
+    console.log('Getting diaries', { userId, limit })
+    return await apiRequest(`/api/diary/list?userId=${userId}&limit=${limit}`)
+  },
+
+  async deleteDiary(diaryId: string, userId: string = 'demo') {
+    console.log('Deleting diary', { diaryId, userId })
+    return await apiRequest(`/api/diary/${diaryId}?userId=${userId}`, {
+      method: 'DELETE'
+    })
+  }
+}
+
+// API utility functions for persona
+export const personaAPI = {
+  async getProfile(userId: string = 'demo') {
+    console.log('Getting persona profile', { userId })
+    return await apiRequest(`/api/persona/profile?userId=${userId}`)
+  }
+}
+
 // 型定義
 export interface Post {
   id: number
