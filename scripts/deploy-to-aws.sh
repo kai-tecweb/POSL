@@ -83,9 +83,19 @@ if [ -f "backend/ecosystem.production.config.js" ]; then
     log_info "✓ PM2設定ファイル転送完了"
 fi
 
+# ルートディレクトリのpackage.jsonも転送（node-cron依存関係のため）
+if [ -f "package.json" ]; then
+    remote_copy "package.json" "${DEPLOY_DIR}/"
+    log_info "✓ package.json 転送完了"
+fi
+
 # バックエンド依存関係インストール
 log_info "📦 バックエンド依存関係をインストール中..."
 remote_exec "cd ${BACKEND_DIR} && npm install --production"
+
+# ルートディレクトリの依存関係もインストール（node-cronのため）
+log_info "📦 ルート依存関係をインストール中..."
+remote_exec "cd ${DEPLOY_DIR} && npm install --production"
 
 # 2. フロントエンドデプロイ
 log_info "📦 フロントエンドをデプロイ中..."
@@ -169,9 +179,9 @@ fi
 # 5. PM2でプロセス再起動
 log_info "🔄 PM2プロセスを再起動中..."
 
-# バックエンドAPI再起動
-remote_exec "cd ${BACKEND_DIR} && pm2 delete posl-api 2>/dev/null || true"
-remote_exec "cd ${BACKEND_DIR} && pm2 start ecosystem.config.js || pm2 start simple_final_api.js --name posl-api --cwd ${BACKEND_DIR}"
+# バックエンドAPI再起動（simple_final_api.jsをルートディレクトリから起動）
+remote_exec "pm2 delete posl-api 2>/dev/null || true"
+remote_exec "cd ${DEPLOY_DIR} && pm2 start simple_final_api.js --name posl-api"
 
 # フロントエンド再起動
 remote_exec "cd ${FRONTEND_DIR} && pm2 delete posl-frontend 2>/dev/null || true"
