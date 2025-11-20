@@ -80,8 +80,9 @@ app.put("/dev/settings/post-time", async (req, res) => {
         
         console.log(`📅 新しいcron設定内容:\n${newCronContent}`);
         
-        // Step 3: crontabに書き込み
-        const writeCron = require('child_process').spawn('crontab', ['-'], {
+        // Step 3: crontabに書き込み（確実な方法）
+        const { spawn } = require('child_process');
+        const writeCron = spawn('crontab', ['-'], {
           stdio: ['pipe', 'pipe', 'pipe']
         });
         
