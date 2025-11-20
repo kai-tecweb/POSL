@@ -181,6 +181,8 @@ async function initializeSchedule() {
     }
   } catch (error) {
     console.error(`❌ スケジュール初期化エラー: ${error.message}`);
+    console.error(`   データベース接続に失敗しました。後で再試行してください。`);
+    // エラーが発生してもサーバーは起動を続ける
   } finally {
     if (connection) {
       await connection.end();
