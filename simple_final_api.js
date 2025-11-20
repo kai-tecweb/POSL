@@ -766,8 +766,13 @@ async function generatePromptWithSettings(connection, userId) {
 ▼文量・形式
 - 140文字前後を目安とし、最大でも280文字以内に収めてください。`;
   
-  // 絵文字ルール（emoji_levelに応じて）- toneSettingsの後に処理
+  // 絵文字レベルを取得（toneSettingsの前に取得）
   let emojiLevel = 0.3; // デフォルト値
+  if (toneSettings && toneSettings.emoji_level !== undefined) {
+    emojiLevel = toneSettings.emoji_level / 100;
+  }
+  
+  // 絵文字ルールを追加（プロンプト設計書に準拠）
   if (emojiLevel === 0) {
     systemPrompt += `\n- 絵文字は使わないでください。`;
   } else if (emojiLevel <= 0.4) {
@@ -783,7 +788,7 @@ async function generatePromptWithSettings(connection, userId) {
 ▼文体・口調
 - 「です・ます調」で統一してください。`;
   
-  // トーン設定に基づく文体指示
+  // トーン設定に基づく文体指示（プロンプト設計書11-2に準拠）
   if (toneSettings) {
     const politeness = toneSettings.politeness !== undefined ? toneSettings.politeness / 100 : 0.8;
     const casualness = toneSettings.casualness !== undefined ? toneSettings.casualness / 100 : 0.4;
@@ -818,106 +823,6 @@ async function generatePromptWithSettings(connection, userId) {
 
 ▼NG事項
 - 暴力、差別、政治、宗教、誹謗中傷に関する内容は書かないでください。`;
-
-  // 絵文字レベルを取得
-  if (toneSettings && toneSettings.emoji_level !== undefined) {
-    emojiLevel = toneSettings.emoji_level / 100;
-  }
-  
-  // 絵文字ルールを追加
-  if (emojiLevel === 0) {
-    systemPrompt += `\n- 絵文字は使わないでください。`;
-  } else if (emojiLevel <= 0.4) {
-    systemPrompt += `\n- 絵文字は使っても1個までにしてください。`;
-  } else if (emojiLevel <= 0.7) {
-    systemPrompt += `\n- 絵文字は2個までにしてください。`;
-  } else {
-    systemPrompt += `\n- 絵文字は最大3個までにしてください。使いすぎないでください。`;
-  }
-  
-  systemPrompt += `\n- ハッシュタグやURLは今回のバージョンでは基本的に使わないでください。
-
-▼文体・口調
-- 「です・ます調」で統一してください。`;
-  
-  // トーン設定を反映（プロンプト設計書に従って数値を人間に分かる指示に変換）
-  if (toneSettings) {
-    const toneDesc = [];
-    
-    // 丁寧さ（0-100 → 0.0-1.0に変換して判定）
-    if (toneSettings.politeness !== undefined) {
-      const politeness = toneSettings.politeness / 100;
-      if (politeness >= 0.8) {
-        toneDesc.push('丁寧だが堅すぎない言葉で');
-      } else if (politeness >= 0.5) {
-        toneDesc.push('適度に丁寧な言葉で');
-      } else {
-        toneDesc.push('カジュアルな言葉で');
-      }
-    }
-    
-    // カジュアルさ
-    if (toneSettings.casualness !== undefined) {
-      const casualness = toneSettings.casualness / 100;
-      if (casualness >= 0.6) {
-        toneDesc.push('カジュアルな表現を積極的に使用');
-      } else if (casualness >= 0.3) {
-        toneDesc.push('カジュアルさは控えめ');
-      } else {
-        toneDesc.push('フォーマルな表現を心がける');
-      }
-    }
-    
-    // ポジティブ度
-    if (toneSettings.positivity !== undefined) {
-      const positivity = toneSettings.positivity / 100;
-      if (positivity >= 0.8) {
-        toneDesc.push('全体として前向きな印象になるように');
-      } else if (positivity >= 0.5) {
-        toneDesc.push('適度にポジティブな表現を入れる');
-      } else {
-        toneDesc.push('中立的な表現を心がける');
-      }
-    }
-    
-    // 専門度（intellectual）
-    if (toneSettings.intellectual !== undefined) {
-      const intellectual = toneSettings.intellectual / 100;
-      if (intellectual <= 0.3) {
-        toneDesc.push('専門用語はできるだけ使わず、小学生にも分かる表現を意識する');
-      } else if (intellectual <= 0.6) {
-        toneDesc.push('専門用語を使う場合は簡単に説明を加える');
-      } else {
-        toneDesc.push('適度に専門的な表現を使用してよい');
-      }
-    }
-    
-    // 感情の濃さ（emotional）
-    if (toneSettings.emotional !== undefined) {
-      const emotional = toneSettings.emotional / 100;
-      if (emotional >= 0.7) {
-        toneDesc.push('適度に気持ちが伝わるような表現を入れる');
-      } else if (emotional >= 0.4) {
-        toneDesc.push('感情表現は控えめに');
-      } else {
-        toneDesc.push('感情表現は最小限に');
-      }
-    }
-    
-    // 創造性（creativity）
-    if (toneSettings.creativity !== undefined) {
-      const creativity = toneSettings.creativity / 100;
-      if (creativity >= 0.7) {
-        toneDesc.push('時々、軽い比喩表現を使ってよい');
-      } else if (creativity >= 0.4) {
-        toneDesc.push('比喩は控えめに使用');
-      }
-    }
-    
-    if (toneDesc.length > 0) {
-      systemPrompt += `\n\n【文体設定】\n${toneDesc.join('\n')}`;
-    }
-  }
 
   // NGワードを追加
   if (promptSettings && promptSettings.ng_words && promptSettings.ng_words.length > 0) {
