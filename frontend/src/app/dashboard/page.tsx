@@ -30,15 +30,26 @@ const Dashboard = () => {
     try {
       setData(prev => ({ ...prev, loading: true }))
       
-      const trendsResponse = await fetch('http://localhost:3001/local/trends/fetch')
+      const trendsResponse = await fetch('/api/trends/fetch')
       const trendsData = await trendsResponse.json()
       
-      const postsResponse = await fetch('http://localhost:3001/local/post/logs')
+      const postsResponse = await fetch('/api/post/logs?limit=20')
       const postsData = await postsResponse.json()
       
+      // バックエンドのレスポンス形式に合わせて変換
+      const postLogs: PostLog[] = postsData.success && postsData.data
+        ? postsData.data.map((post: any) => ({
+            id: post.post_id || post.id || String(post.timestamp),
+            content: post.content || '',
+            createdAt: post.created_at || post.timestamp || new Date().toISOString(),
+            platform: 'x' as const,
+            status: post.status === 'posted' ? 'success' as const : 'failed' as const
+          }))
+        : []
+      
       setData({
-        trends: trendsData.success ? trendsData.data.trends : [],
-        postLogs: postsData.success ? postsData.data.posts : [],
+        trends: trendsData.success ? (trendsData.data?.trends || []) : [],
+        postLogs: postLogs,
         loading: false
       })
       
