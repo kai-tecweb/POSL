@@ -4,6 +4,9 @@ const mysql = require("mysql2/promise");
 const { exec } = require("child_process");
 const { OpenAI } = require("openai");
 const { TwitterApi } = require("twitter-api-v2");
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
@@ -458,20 +461,199 @@ async function savePostLog(userId, postData) {
   }
 }
 
+// データベース接続ヘルパー関数
+async function getConnection() {
+  return await mysql.createConnection({
+    host: process.env.MYSQL_HOST,
+    port: parseInt(process.env.MYSQL_PORT),
+    user: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+    database: process.env.MYSQL_DATABASE
+  });
+}
+
+// 設定取得ヘルパー関数
+async function getSetting(connection, userId, settingType) {
+  try {
+    const [rows] = await connection.execute(
+      "SELECT setting_data FROM settings WHERE user_id = ? AND setting_type = ?",
+      [userId, settingType]
+    );
+    if (rows.length > 0) {
+      return typeof rows[0].setting_data === 'string' 
+        ? JSON.parse(rows[0].setting_data) 
+        : rows[0].setting_data;
+    }
+    return null;
+  } catch (error) {
+    console.error(`設定取得エラー (${settingType}):`, error);
+    return null;
+  }
+}
+
+// 人格プロファイル取得ヘルパー関数
+async function getPersonaProfile(connection, userId) {
+  try {
+    const [rows] = await connection.execute(
+      "SELECT persona_data, analysis_summary FROM persona_profiles WHERE user_id = ?",
+      [userId]
+    );
+    if (rows.length > 0) {
+      const personaData = typeof rows[0].persona_data === 'string'
+        ? JSON.parse(rows[0].persona_data)
+        : rows[0].persona_data;
+      return {
+        data: personaData,
+        summary: rows[0].analysis_summary
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error("人格プロファイル取得エラー:", error);
+    return null;
+  }
+}
+
+// 最近の日記取得ヘルパー関数
+async function getRecentDiaries(connection, userId, limit = 3) {
+  try {
+    const [rows] = await connection.execute(
+      "SELECT diary_data, content FROM diaries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      [userId, limit]
+    );
+    return rows.map(row => {
+      const diaryData = typeof row.diary_data === 'string'
+        ? JSON.parse(row.diary_data)
+        : row.diary_data;
+      return {
+        content: row.content || diaryData.content || '',
+        data: diaryData
+      };
+    });
+  } catch (error) {
+    console.error("日記取得エラー:", error);
+    return [];
+  }
+}
+
+// 今日の曜日テーマ取得
+function getTodayWeekTheme(weekThemeSettings) {
+  if (!weekThemeSettings) return null;
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const today = new Date();
+  const dayIndex = today.getDay();
+  const dayKey = days[dayIndex];
+  return weekThemeSettings[dayKey] || null;
+}
+
+// プロンプト生成関数
+async function generatePromptWithSettings(connection, userId) {
+  // 設定を取得
+  const [weekThemeSettings, toneSettings, promptSettings, personaProfile, recentDiaries] = await Promise.all([
+    getSetting(connection, userId, 'week-theme'),
+    getSetting(connection, userId, 'tone'),
+    getSetting(connection, userId, 'prompt'),
+    getPersonaProfile(connection, userId),
+    getRecentDiaries(connection, userId, 3)
+  ]);
+
+  // 今日の曜日テーマ
+  const todayTheme = getTodayWeekTheme(weekThemeSettings);
+
+  // システムプロンプト構築
+  let systemPrompt = `あなたはユーザー本人の分身としてX投稿を書くAIです。
+以下の条件に従って、280文字以内で自然で魅力的な投稿文を作成してください。
+
+【基本方針】
+- 読んだ人が少し前向きになること
+- 専門用語は少なめ、使う時はできるだけ噛み砕く
+- 売り込み感が強すぎない`;
+
+  // トーン設定を反映
+  if (toneSettings) {
+    const toneDesc = [];
+    if (toneSettings.politeness !== undefined) {
+      toneDesc.push(`丁寧さ: ${toneSettings.politeness}/100`);
+    }
+    if (toneSettings.positivity !== undefined) {
+      toneDesc.push(`ポジティブ度: ${toneSettings.positivity}/100`);
+    }
+    if (toneSettings.casualness !== undefined) {
+      toneDesc.push(`カジュアルさ: ${toneSettings.casualness}/100`);
+    }
+    if (toneDesc.length > 0) {
+      systemPrompt += `\n\n【文体設定】\n${toneDesc.join(', ')}`;
+    }
+  }
+
+  // プロンプト設定を反映
+  if (promptSettings) {
+    if (promptSettings.additional_rules && promptSettings.additional_rules.length > 0) {
+      systemPrompt += `\n\n【追加ルール】\n${promptSettings.additional_rules.join('\n')}`;
+    }
+    if (promptSettings.preferred_phrases && promptSettings.preferred_phrases.length > 0) {
+      systemPrompt += `\n\n【よく使ってほしい表現】\n${promptSettings.preferred_phrases.join(', ')}`;
+    }
+    if (promptSettings.ng_words && promptSettings.ng_words.length > 0) {
+      systemPrompt += `\n\n【使わないでほしい単語】\n${promptSettings.ng_words.join(', ')}`;
+    }
+  }
+
+  // ユーザープロンプト構築
+  let userPrompt = "";
+
+  // 曜日テーマを反映
+  if (todayTheme) {
+    userPrompt += `【今日のテーマ】\n${todayTheme}\n\n`;
+  }
+
+  // 人格プロファイルを反映
+  if (personaProfile && personaProfile.summary) {
+    userPrompt += `【投稿者の人格プロファイル】\n${personaProfile.summary}\n\n`;
+    if (personaProfile.data && personaProfile.data.interests) {
+      userPrompt += `興味・関心: ${personaProfile.data.interests.join(', ')}\n`;
+    }
+    if (personaProfile.data && personaProfile.data.values) {
+      userPrompt += `価値観: ${personaProfile.data.values.join(', ')}\n\n`;
+    }
+  }
+
+  // 最近の日記を反映
+  if (recentDiaries && recentDiaries.length > 0) {
+    userPrompt += `【最近の日記内容】\n`;
+    recentDiaries.forEach((diary, index) => {
+      if (diary.content) {
+        userPrompt += `${index + 1}. ${diary.content.substring(0, 100)}${diary.content.length > 100 ? '...' : ''}\n`;
+      }
+    });
+    userPrompt += "\n";
+  }
+
+  // トレンド情報（後で追加可能）
+  userPrompt += `上記の情報を踏まえて、自然で魅力的な投稿文を生成してください。`;
+
+  return { systemPrompt, userPrompt };
+}
+
 // POST /dev/post/ai-with-x - AI生成+X投稿（メイン）
 app.post("/dev/post/ai-with-x", async (req, res) => {
+  let connection;
   try {
     const userId = req.body.userId || "demo";
     console.log(`🚀 AI投稿+X投稿開始: userId=${userId}`);
     
+    // データベース接続
+    connection = await getConnection();
+    
+    // プロンプト生成（設定を反映）
+    const { systemPrompt, userPrompt } = await generatePromptWithSettings(connection, userId);
+    
+    console.log(`📝 生成されたプロンプト:`);
+    console.log(`System: ${systemPrompt.substring(0, 100)}...`);
+    console.log(`User: ${userPrompt.substring(0, 100)}...`);
+    
     // OpenAIで投稿文生成
     const openai = getOpenAIClient();
-    const systemPrompt = `あなたはフィンテック・投資分析に特化したSNS投稿を生成するAIです。
-280文字以内で、自然で前向きな投稿文を作成してください。
-ハッシュタグは適切に使用してください。`;
-    
-    const userPrompt = `今日のフィンテック・投資関連のトレンドを踏まえた投稿文を生成してください。`;
-    
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
@@ -540,6 +722,10 @@ app.post("/dev/post/ai-with-x", async (req, res) => {
       success: false, 
       error: error.message 
     });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
   }
 });
 
@@ -755,6 +941,333 @@ app.post("/dev/post/generate-and-post", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// ============================================
+// 音声日記関連エンドポイント
+// ============================================
+
+// POST /api/diary/transcribe - 音声転写
+app.post("/api/diary/transcribe", async (req, res) => {
+  let connection;
+  try {
+    const userId = req.body.userId || "demo";
+    const audioData = req.body.audioData; // Base64エンコードされた音声データ
+    const audioUrl = req.body.audioUrl; // またはURL
+    
+    if (!audioData && !audioUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "audioDataまたはaudioUrlが必要です"
+      });
+    }
+    
+    console.log(`🎤 音声転写開始: userId=${userId}`);
+    
+    connection = await getConnection();
+    
+    // OpenAI Whisper APIで転写
+    const openai = getOpenAIClient();
+    let transcriptionText = "";
+    
+    if (audioData) {
+      // Base64データを処理
+      const audioBuffer = Buffer.from(audioData, 'base64');
+      const tempFilePath = path.join('/tmp', `audio_${Date.now()}.mp3`);
+      fs.writeFileSync(tempFilePath, audioBuffer);
+      
+      const audioFile = fs.createReadStream(tempFilePath);
+      const transcription = await openai.audio.transcriptions.create({
+        file: audioFile,
+        model: "whisper-1",
+        language: "ja"
+      });
+      transcriptionText = transcription.text;
+      
+      // 一時ファイル削除
+      fs.unlinkSync(tempFilePath);
+    } else if (audioUrl) {
+      // URLから音声をダウンロードして転写
+      const response = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+      const audioBuffer = Buffer.from(response.data);
+      const tempFilePath = path.join('/tmp', `audio_${Date.now()}.mp3`);
+      fs.writeFileSync(tempFilePath, audioBuffer);
+      
+      const audioFile = fs.createReadStream(tempFilePath);
+      const transcription = await openai.audio.transcriptions.create({
+        file: audioFile,
+        model: "whisper-1",
+        language: "ja"
+      });
+      transcriptionText = transcription.text;
+      
+      // 一時ファイル削除
+      fs.unlinkSync(tempFilePath);
+    }
+    
+    if (!transcriptionText || transcriptionText.trim().length === 0) {
+      return res.status(500).json({
+        success: false,
+        error: "転写結果が空です"
+      });
+    }
+    
+    // 日記データを保存
+    const diaryId = `diary_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const timestamp = new Date().toISOString();
+    const diaryData = {
+      title: "音声日記",
+      content: transcriptionText,
+      transcription_status: "completed",
+      audio_file_url: audioUrl || null
+    };
+    
+    await connection.execute(
+      'INSERT INTO diaries (user_id, diary_id, created_at, diary_data, content) VALUES (?, ?, ?, ?, ?)',
+      [userId, diaryId, timestamp, JSON.stringify(diaryData), transcriptionText]
+    );
+    
+    console.log(`✅ 音声転写完了: diaryId=${diaryId}`);
+    
+    // プロファイル更新を非同期で実行
+    updatePersonaProfileFromDiary(connection, userId, transcriptionText).catch(err => {
+      console.error("プロファイル更新エラー:", err);
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        diaryId: diaryId,
+        transcription: transcriptionText,
+        timestamp: timestamp
+      }
+    });
+    
+  } catch (error) {
+    console.error("❌ 音声転写エラー:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// GET /api/diary/list - 日記一覧取得
+app.get("/api/diary/list", async (req, res) => {
+  let connection;
+  try {
+    const userId = req.query.userId || "demo";
+    const limit = parseInt(req.query.limit) || 10;
+    
+    connection = await getConnection();
+    
+    const [rows] = await connection.execute(
+      "SELECT diary_id, created_at, diary_data, content FROM diaries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      [userId, limit]
+    );
+    
+    const diaries = rows.map(row => {
+      const diaryData = typeof row.diary_data === 'string'
+        ? JSON.parse(row.diary_data)
+        : row.diary_data;
+      return {
+        id: row.diary_id,
+        content: row.content || diaryData.content || '',
+        createdAt: row.created_at,
+        data: diaryData
+      };
+    });
+    
+    res.json({
+      success: true,
+      data: diaries
+    });
+    
+  } catch (error) {
+    console.error("❌ 日記一覧取得エラー:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// DELETE /api/diary/:diaryId - 日記削除
+app.delete("/api/diary/:diaryId", async (req, res) => {
+  let connection;
+  try {
+    const userId = req.query.userId || "demo";
+    const diaryId = req.params.diaryId;
+    
+    connection = await getConnection();
+    
+    await connection.execute(
+      "DELETE FROM diaries WHERE user_id = ? AND diary_id = ?",
+      [userId, diaryId]
+    );
+    
+    res.json({
+      success: true,
+      message: "日記を削除しました"
+    });
+    
+  } catch (error) {
+    console.error("❌ 日記削除エラー:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// GET /api/persona/profile - 人格プロファイル取得
+app.get("/api/persona/profile", async (req, res) => {
+  let connection;
+  try {
+    const userId = req.query.userId || "demo";
+    
+    connection = await getConnection();
+    const profile = await getPersonaProfile(connection, userId);
+    
+    if (profile) {
+      res.json({
+        success: true,
+        data: profile
+      });
+    } else {
+      res.json({
+        success: true,
+        data: null,
+        message: "プロファイルが存在しません"
+      });
+    }
+    
+  } catch (error) {
+    console.error("❌ プロファイル取得エラー:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// 日記から人格プロファイルを更新する関数
+async function updatePersonaProfileFromDiary(connection, userId, diaryText) {
+  try {
+    // 既存のプロファイルを取得
+    const existingProfile = await getPersonaProfile(connection, userId);
+    
+    // 最近の日記を取得（プロファイル生成用）
+    const recentDiaries = await getRecentDiaries(connection, userId, 10);
+    const allDiaryText = recentDiaries.map(d => d.content).join('\n\n');
+    
+    // OpenAIで人格分析
+    const openai = getOpenAIClient();
+    const systemPrompt = `あなたは心理学とパーソナリティ分析の専門家です。
+以下の日記テキストを分析して、書き手の人格特性を抽出してください。
+
+【分析観点】
+1. 性格特徴（外向性、協調性、誠実性、神経質傾向、開放性）
+2. 価値観や興味関心
+3. 話し方や表現の特徴
+4. 感情の傾向
+
+${existingProfile ? `【既存プロファイル】\n${existingProfile.summary}\n（既存の情報と統合して分析してください）` : ''}
+
+JSON形式で以下の構造で回答してください：
+{
+  "summary": "人格の要約（100文字程度）",
+  "personality_traits": {
+    "openness": 75,
+    "conscientiousness": 80,
+    "extraversion": 60,
+    "agreeableness": 85,
+    "neuroticism": 30
+  },
+  "interests": ["技術", "学習", "散歩", "読書"],
+  "values": ["成長", "学習", "効率", "創造性"],
+  "communication_style": "thoughtful and analytical",
+  "recent_themes": ["技術への関心", "日常の充実", "新しい発見"]
+}`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `以下の日記テキストを分析してください：\n\n${allDiaryText || diaryText}` }
+      ],
+      max_tokens: 500,
+      temperature: 0.3
+    });
+    
+    const analysisText = completion.choices[0]?.message?.content?.trim() || "";
+    let analysisData;
+    
+    try {
+      // JSONを抽出（コードブロックがあれば除去）
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysisData = JSON.parse(jsonMatch[0]);
+      } else {
+        analysisData = JSON.parse(analysisText);
+      }
+    } catch (parseError) {
+      console.error("JSON解析エラー:", parseError);
+      // フォールバック: 要約のみ抽出
+      analysisData = {
+        summary: analysisText.substring(0, 200),
+        personality_traits: existingProfile?.data?.personality_traits || {},
+        interests: [],
+        values: [],
+        communication_style: "",
+        recent_themes: []
+      };
+    }
+    
+    // プロファイルを保存または更新
+    const personaData = {
+      personality_traits: analysisData.personality_traits || {},
+      interests: analysisData.interests || [],
+      values: analysisData.values || [],
+      communication_style: analysisData.communication_style || "",
+      recent_themes: analysisData.recent_themes || [],
+      analysis_date: new Date().toISOString()
+    };
+    
+    const analysisSummary = analysisData.summary || analysisText.substring(0, 200);
+    
+    await connection.execute(
+      `INSERT INTO persona_profiles (user_id, persona_data, analysis_summary, created_at, updated_at)
+       VALUES (?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+       persona_data = VALUES(persona_data),
+       analysis_summary = VALUES(analysis_summary),
+       updated_at = NOW()`,
+      [userId, JSON.stringify(personaData), analysisSummary]
+    );
+    
+    console.log(`✅ プロファイル更新完了: userId=${userId}`);
+    
+  } catch (error) {
+    console.error("❌ プロファイル更新エラー:", error);
+    // エラーはログに記録するが、投稿処理は続行
+  }
+}
 
 app.listen(3001, () => {
   console.log("🚀 Simple Final API Server on port 3001");

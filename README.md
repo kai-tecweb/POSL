@@ -39,19 +39,21 @@ POSLは「あなたの分身が書いたような、自然で前向きなX投稿
 
 ## 🛠 技術スタック
 
-### バックエンド（移行後・本番稼働中）
-- **EC2 (Express.js + Node.js 18.x, TypeScript)**
-- **RDS MySQL 8.0 (Multi-AZ)**
-- **Application Load Balancer**
+### バックエンド（本番環境・完全移行済み）
+- **EC2 (Express.js + Node.js 18.x)** - `simple_final_api.js`で直接実行
+- **RDS MySQL 8.0 (Multi-AZ)** - 完全移行完了（DynamoDB依存なし）
 - **OpenAI GPT-4 API (統合済み)** 🎉
-- **X API v2 (投稿機能統合済み)** 🎉 **NEW**
-- **Google/Yahoo Trends API (統合済み)** 🎉 **NEW**
-- **OpenAI Whisper API (音声日記統合済み)** 🎉 **NEW**
+- **X API v2 (投稿機能統合済み)** 🎉
+- **Google/Yahoo Trends API (統合済み)** 🎉
+- **OpenAI Whisper API (音声日記統合済み)** 🎉
+- **プロンプトエンジン (設定反映済み)** 🎉 **NEW**
+- **人格プロファイル自動生成** 🎉 **NEW**
 - **node-cron (スケジューラー)**
-- **PM2 + systemd (プロセス管理)**
+- **PM2 (フロントエンド管理)**
 - S3 (音声ファイル保存)
 - CloudWatch (監視・ログ)
-- **GitHub Actions CI/CD (完全自動化)** 🚀 **NEW**
+
+**重要**: Lambda関数からExpress.jsへ完全移行済み（`ドキュメント/active/本番環境移行_完全版.md`参照）
 
 ### フロントエンド（変更なし）
 - Next.js 14
