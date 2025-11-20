@@ -1,20 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useAppStore } from '@/store/appStore'
 import { TrendData, PostLog } from '@/types'
 
 const Dashboard = () => {
+  const { trends, postLogs, loading, fetchTrends, fetchPostLogs, error } = useAppStore()
   const [mounted, setMounted] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<{
-    trends: TrendData[]
-    postLogs: PostLog[]
-    loading: boolean
-  }>({
-    trends: [],
-    postLogs: [],
-    loading: false,
-  })
 
   useEffect(() => {
     setMounted(true)
@@ -28,35 +20,12 @@ const Dashboard = () => {
 
   const loadData = async () => {
     try {
-      setData(prev => ({ ...prev, loading: true }))
-      
-      const trendsResponse = await fetch('/api/trends/fetch')
-      const trendsData = await trendsResponse.json()
-      
-      const postsResponse = await fetch('/api/post/logs?limit=20')
-      const postsData = await postsResponse.json()
-      
-      // バックエンドのレスポンス形式に合わせて変換
-      const postLogs: PostLog[] = postsData.success && postsData.data
-        ? postsData.data.map((post: any) => ({
-            id: post.post_id || post.id || String(post.timestamp),
-            content: post.content || '',
-            createdAt: post.created_at || post.timestamp || new Date().toISOString(),
-            platform: 'x' as const,
-            status: post.status === 'posted' ? 'success' as const : 'failed' as const
-          }))
-        : []
-      
-      setData({
-        trends: trendsData.success ? (trendsData.data?.trends || []) : [],
-        postLogs: postLogs,
-        loading: false
-      })
-      
-    } catch (error) {
-      console.error('Data loading failed:', error)
-      setError('データの読み込みに失敗しました')
-      setData(prev => ({ ...prev, loading: false }))
+      await Promise.all([
+        fetchTrends(),
+        fetchPostLogs()
+      ])
+    } catch (err) {
+      console.error('Data loading failed:', err)
     }
   }
 
@@ -87,7 +56,7 @@ const Dashboard = () => {
               <div className="text-red-700">{error}</div>
               <button
                 className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                onClick={() => setError(null)}
+                onClick={() => useAppStore.getState().clearError()}
               >
                 閉じる
               </button>
@@ -133,7 +102,7 @@ const Dashboard = () => {
               </div>
               <div>
                 <h3 className="text-sm font-medium text-gray-500">投稿数</h3>
-                <p className="text-lg font-bold text-gray-900">{data.postLogs.length}</p>
+                <p className="text-lg font-bold text-gray-900">{postLogs.length}</p>
               </div>
             </div>
           </div>
@@ -157,7 +126,7 @@ const Dashboard = () => {
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">トレンド情報</h2>
-              {data.loading ? (
+              {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="p-3 bg-gray-50 rounded-lg animate-pulse">
@@ -165,9 +134,9 @@ const Dashboard = () => {
                     </div>
                   ))}
                 </div>
-              ) : data.trends.length > 0 ? (
+              ) : trends.length > 0 ? (
                 <div className="space-y-3">
-                  {data.trends.slice(0, 5).map((trend: TrendData, index: number) => (
+                  {trends.slice(0, 5).map((trend: TrendData, index: number) => (
                     <div key={index} className="p-3 bg-gray-50 rounded-lg">
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-gray-900">{trend.keyword}</span>
@@ -193,9 +162,9 @@ const Dashboard = () => {
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">投稿ログ</h2>
-              {data.postLogs.length > 0 ? (
+              {postLogs.length > 0 ? (
                 <div className="space-y-3">
-                  {data.postLogs.slice(0, 3).map((log: PostLog) => (
+                  {postLogs.slice(0, 3).map((log: PostLog) => (
                     <div key={log.id} className="p-3 bg-gray-50 rounded-lg">
                       <p className="text-sm text-gray-900">{log.content}</p>
                       <p className="text-xs text-gray-500 mt-1">
