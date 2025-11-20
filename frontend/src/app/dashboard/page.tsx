@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { TrendData, PostLog } from '@/types'
+import Layout from '@/components/Layout'
 
 const Dashboard = () => {
   const { trends, postLogs, loading, fetchTrends, fetchPostLogs, error } = useAppStore()
@@ -16,14 +17,25 @@ const Dashboard = () => {
     if (mounted) {
       loadData()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted])
 
   const loadData = async () => {
     try {
-      await Promise.all([
-        fetchTrends(),
-        fetchPostLogs()
-      ])
+      // fetchTrendsとfetchPostLogsを個別に呼び出し（エラーハンドリングを改善）
+      try {
+        await fetchTrends()
+      } catch (err) {
+        console.error('Failed to fetch trends:', err)
+        // エラーが発生しても続行
+      }
+      
+      try {
+        await fetchPostLogs()
+      } catch (err) {
+        console.error('Failed to fetch post logs:', err)
+        // エラーが発生しても続行
+      }
     } catch (err) {
       console.error('Data loading failed:', err)
     }
@@ -31,18 +43,21 @@ const Dashboard = () => {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <div className="text-lg text-gray-600">読み込み中...</div>
+      <Layout>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <div className="text-lg text-gray-600">読み込み中...</div>
+          </div>
         </div>
-      </div>
+      </Layout>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-8">
+    <Layout>
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-7xl mx-auto p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">ダッシュボード</h1>
           <p className="mt-2 text-gray-600">
@@ -182,7 +197,7 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-    </div>
+    </Layout>
   )
 }
 

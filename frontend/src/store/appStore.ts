@@ -454,22 +454,28 @@ export const useAppStore = create<AppStore>()(
       fetchTrends: async () => {
         console.log('fetchTrends called - starting trend fetch')
         try {
-          set({ loading: true })
+          set({ loading: true, error: null })
+          
+          // trendsAPI.getTrends()を正しく呼び出す
+          if (!trendsAPI || typeof trendsAPI.getTrends !== 'function') {
+            throw new Error('trendsAPI.getTrends is not a function')
+          }
+          
           console.log('Making API call to trendsAPI.getTrends()')
           const response = await trendsAPI.getTrends()
           console.log('API response received:', response)
           
           // Transform Google Trends response to TrendData format
-          const trends: TrendData[] = response.data?.trends?.map((trend: any, index: number) => ({
+          const trends: TrendData[] = response?.data?.trends?.map((trend: any, index: number) => ({
             rank: index + 1,
-            keyword: trend.query || trend.keyword || trend.title,
-            source: 'google',
-            category: 'トレンド'
+            keyword: trend.query || trend.keyword || trend.title || `トレンド${index + 1}`,
+            source: trend.source || 'google',
+            category: trend.category || 'トレンド'
           })) || []
           
           console.log('Transformed trends:', trends)
-          set({ trends, loading: false })
-        } catch (error) {
+          set({ trends, loading: false, error: null })
+        } catch (error: any) {
           console.error('Failed to fetch trends:', error)
           // Fallback to mock data
           const mockTrends: TrendData[] = [
@@ -479,7 +485,7 @@ export const useAppStore = create<AppStore>()(
           ]
           set({ 
             trends: mockTrends, 
-            error: 'トレンド情報の取得に失敗しました（モックデータを表示中）', 
+            error: `トレンド情報の取得に失敗しました: ${error?.message || '不明なエラー'}（モックデータを表示中）`, 
             loading: false 
           })
         }
