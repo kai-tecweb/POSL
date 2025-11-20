@@ -560,29 +560,99 @@ async function generatePromptWithSettings(connection, userId) {
   // 今日の曜日テーマ
   const todayTheme = getTodayWeekTheme(weekThemeSettings);
 
-  // システムプロンプト構築
-  let systemPrompt = `あなたはユーザー本人の分身としてX投稿を書くAIです。
-以下の条件に従って、280文字以内で自然で魅力的な投稿文を作成してください。
+  // システムプロンプト構築（プロンプト設計書に準拠）
+  let systemPrompt = `あなたは、ユーザー本人の分身としてX投稿を書くAIです。
+以下の条件に従って、原則140文字前後（最大280文字以内）で自然で魅力的な投稿文を作成してください。
 
 【基本方針】
 - 読んだ人が少し前向きになること
 - 専門用語は少なめ、使う時はできるだけ噛み砕く
-- 売り込み感が強すぎない`;
+- 売り込み感が強すぎない（宣伝テーマ時は例外・ソフトに）
 
-  // トーン設定を反映
+【文量制約】
+- 原則140文字前後（日本語想定）
+- 必要なら短めを優先（スクロールしないで読める長さ）
+- 最大280文字以内
+
+【NG事項】
+- 暴力・差別・政治・炎上ネタなどは避ける`;
+
+  // トーン設定を反映（プロンプト設計書に従って数値を人間に分かる指示に変換）
   if (toneSettings) {
     const toneDesc = [];
+    
+    // 丁寧さ（0-100 → 0.0-1.0に変換して判定）
     if (toneSettings.politeness !== undefined) {
-      toneDesc.push(`丁寧さ: ${toneSettings.politeness}/100`);
+      const politeness = toneSettings.politeness / 100;
+      if (politeness >= 0.8) {
+        toneDesc.push('丁寧だが堅すぎない言葉で');
+      } else if (politeness >= 0.5) {
+        toneDesc.push('適度に丁寧な言葉で');
+      } else {
+        toneDesc.push('カジュアルな言葉で');
+      }
     }
-    if (toneSettings.positivity !== undefined) {
-      toneDesc.push(`ポジティブ度: ${toneSettings.positivity}/100`);
-    }
+    
+    // カジュアルさ
     if (toneSettings.casualness !== undefined) {
-      toneDesc.push(`カジュアルさ: ${toneSettings.casualness}/100`);
+      const casualness = toneSettings.casualness / 100;
+      if (casualness >= 0.6) {
+        toneDesc.push('カジュアルな表現を積極的に使用');
+      } else if (casualness >= 0.3) {
+        toneDesc.push('カジュアルさは控えめ');
+      } else {
+        toneDesc.push('フォーマルな表現を心がける');
+      }
     }
+    
+    // ポジティブ度
+    if (toneSettings.positivity !== undefined) {
+      const positivity = toneSettings.positivity / 100;
+      if (positivity >= 0.8) {
+        toneDesc.push('全体として前向きな印象になるように');
+      } else if (positivity >= 0.5) {
+        toneDesc.push('適度にポジティブな表現を入れる');
+      } else {
+        toneDesc.push('中立的な表現を心がける');
+      }
+    }
+    
+    // 専門度（intellectual）
+    if (toneSettings.intellectual !== undefined) {
+      const intellectual = toneSettings.intellectual / 100;
+      if (intellectual <= 0.3) {
+        toneDesc.push('専門用語はできるだけ使わず、小学生にも分かる表現を意識する');
+      } else if (intellectual <= 0.6) {
+        toneDesc.push('専門用語を使う場合は簡単に説明を加える');
+      } else {
+        toneDesc.push('適度に専門的な表現を使用してよい');
+      }
+    }
+    
+    // 感情の濃さ（emotional）
+    if (toneSettings.emotional !== undefined) {
+      const emotional = toneSettings.emotional / 100;
+      if (emotional >= 0.7) {
+        toneDesc.push('適度に気持ちが伝わるような表現を入れる');
+      } else if (emotional >= 0.4) {
+        toneDesc.push('感情表現は控えめに');
+      } else {
+        toneDesc.push('感情表現は最小限に');
+      }
+    }
+    
+    // 創造性（creativity）
+    if (toneSettings.creativity !== undefined) {
+      const creativity = toneSettings.creativity / 100;
+      if (creativity >= 0.7) {
+        toneDesc.push('時々、軽い比喩表現を使ってよい');
+      } else if (creativity >= 0.4) {
+        toneDesc.push('比喩は控えめに使用');
+      }
+    }
+    
     if (toneDesc.length > 0) {
-      systemPrompt += `\n\n【文体設定】\n${toneDesc.join(', ')}`;
+      systemPrompt += `\n\n【文体設定】\n${toneDesc.join('\n')}`;
     }
   }
 
@@ -599,37 +669,77 @@ async function generatePromptWithSettings(connection, userId) {
     }
   }
 
-  // ユーザープロンプト構築
+  // ユーザープロンプト構築（プロンプト設計書に準拠）
   let userPrompt = "";
 
-  // 曜日テーマを反映
+  // 今日の曜日テーマを反映
   if (todayTheme) {
-    userPrompt += `【今日のテーマ】\n${todayTheme}\n\n`;
+    userPrompt += `【今日のテーマ】\n今日は「${todayTheme}」の日です。このテーマに沿った投稿を作成してください。\n\n`;
+  }
+
+  // イベント情報を反映
+  const todaysEvents = getTodaysEvents(eventSettings);
+  if (todaysEvents && todaysEvents.length > 0) {
+    userPrompt += `【今日のイベント】\n`;
+    todaysEvents.forEach(event => {
+      userPrompt += `今日は「${event.name}」です。${event.description || ''}\n`;
+    });
+    userPrompt += "\n";
+  }
+
+  // テンプレート情報を反映（プロンプト設計書の要件）
+  if (templateSettings && templateSettings.enabled_templates && templateSettings.enabled_templates.length > 0) {
+    // 優先度の高いテンプレートを選択（簡易実装）
+    const selectedTemplate = templateSettings.enabled_templates[0];
+    userPrompt += `【使用テンプレート】\n${selectedTemplate}の構造を参考にしてください。\n\n`;
   }
 
   // 人格プロファイルを反映
   if (personaProfile && personaProfile.summary) {
-    userPrompt += `【投稿者の人格プロファイル】\n${personaProfile.summary}\n\n`;
+    userPrompt += `【投稿者の人格プロファイル】\n${personaProfile.summary}\n`;
     if (personaProfile.data && personaProfile.data.interests) {
       userPrompt += `興味・関心: ${personaProfile.data.interests.join(', ')}\n`;
     }
     if (personaProfile.data && personaProfile.data.values) {
-      userPrompt += `価値観: ${personaProfile.data.values.join(', ')}\n\n`;
+      userPrompt += `価値観: ${personaProfile.data.values.join(', ')}\n`;
     }
+    userPrompt += "\n";
   }
 
-  // 最近の日記を反映
+  // 直近の日記サマリを反映（2〜3個まで）
   if (recentDiaries && recentDiaries.length > 0) {
     userPrompt += `【最近の日記内容】\n`;
-    recentDiaries.forEach((diary, index) => {
+    recentDiaries.slice(0, 3).forEach((diary, index) => {
       if (diary.content) {
-        userPrompt += `${index + 1}. ${diary.content.substring(0, 100)}${diary.content.length > 100 ? '...' : ''}\n`;
+        const summary = diary.content.length > 100 
+          ? diary.content.substring(0, 100) + '...'
+          : diary.content;
+        userPrompt += `${index + 1}. ${summary}\n`;
       }
     });
     userPrompt += "\n";
   }
 
-  // トレンド情報（後で追加可能）
+  // トレンドワードを反映（プロンプト設計書の要件）
+  if (trends && trends.length > 0) {
+    userPrompt += `【今日のトレンド】\n`;
+    const trendKeywords = trends.map(t => t.keyword).join('、');
+    userPrompt += `${trendKeywords}\n`;
+    userPrompt += `（これらのキーワードを自然に組み込むか、関連する話題を含めてください。無理に結びつける必要はありません。）\n\n`;
+  }
+
+  // creativity_levelに応じた指示（プロンプト設計書の要件）
+  if (promptSettings && promptSettings.creativity_level !== undefined) {
+    const creativity = promptSettings.creativity_level / 100;
+    if (creativity <= 0.3) {
+      userPrompt += `【創造性レベル】\nテンプレとルールに忠実に、変化少なめで作成してください。\n\n`;
+    } else if (creativity <= 0.7) {
+      userPrompt += `【創造性レベル】\nルール守りつつ、言い回しなどは柔軟に作成してください。\n\n`;
+    } else {
+      userPrompt += `【創造性レベル】\nルールをベースにしつつ、比喩や展開に自由度を持たせて作成してください。\n\n`;
+    }
+  }
+
   userPrompt += `上記の情報を踏まえて、自然で魅力的な投稿文を生成してください。`;
 
   return { systemPrompt, userPrompt };
