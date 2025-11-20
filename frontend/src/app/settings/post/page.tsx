@@ -1,24 +1,49 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { Card, Button, Input } from '@/components'
 import Layout from '@/components/Layout'
 
 const PostSettings = () => {
-  const { postTime, savePostTime, loading, error } = useAppStore()
+  const { postTime, savePostTime, loadPostTime, loading, error } = useAppStore()
   const [formData, setFormData] = useState(postTime)
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  // 初期化時にデータを読み込む
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        await loadPostTime()
+        setIsInitialized(true)
+      } catch (err) {
+        console.warn('投稿時刻設定の読み込みに失敗しました:', err)
+        // エラーが発生してもデフォルト値で続行
+        setIsInitialized(true)
+      }
+    }
+    initialize()
+  }, [loadPostTime])
+
+  // postTimeが更新されたらformDataも更新
+  useEffect(() => {
+    if (postTime && postTime.time) {
+      setFormData(postTime)
+    }
+  }, [postTime])
 
   const handleSave = async () => {
     try {
+      setTestResult(null)
       await savePostTime(formData)
       setTestResult('設定を保存しました')
       setTimeout(() => setTestResult(null), 3000)
     } catch (error) {
-      setTestResult('設定の保存に失敗しました')
-      setTimeout(() => setTestResult(null), 3000)
+      console.error('設定保存エラー:', error)
+      setTestResult('設定の保存に失敗しました。もう一度お試しください。')
+      setTimeout(() => setTestResult(null), 5000)
     }
   }
 
@@ -43,6 +68,20 @@ const PostSettings = () => {
     { value: 'Europe/London', label: 'グリニッジ標準時 (GMT)' },
     { value: 'UTC', label: '協定世界時 (UTC)' }
   ]
+
+  // 初期化中はローディング表示
+  if (!isInitialized) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            <span className="ml-3 text-gray-600">設定を読み込んでいます...</span>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
 
   return (
     <Layout>

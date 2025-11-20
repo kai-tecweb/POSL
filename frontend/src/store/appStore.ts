@@ -117,6 +117,33 @@ const defaultPromptSettings: PromptSettings = {
   preferredPhrases: []
 }
 
+// localStorageアクセスのエラーハンドリング
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key)
+    } catch (error) {
+      console.warn('localStorage access failed (possibly blocked by extension):', error)
+      return null
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value)
+    } catch (error) {
+      console.warn('localStorage write failed (possibly blocked by extension):', error)
+      // エラーを無視して続行
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key)
+    } catch (error) {
+      console.warn('localStorage remove failed (possibly blocked by extension):', error)
+    }
+  }
+}
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -187,22 +214,36 @@ export const useAppStore = create<AppStore>()(
       // Settings sync actions
       savePostTime: async (settings) => {
         try {
-          set({ loading: true })
+          set({ loading: true, error: null })
           // time (HH:MM) を hour と minute に変換
           const [hour, minute] = settings.time.split(':').map(Number)
+          
+          if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            throw new Error('無効な時刻形式です')
+          }
+          
           const apiData = {
             hour,
             minute,
-            timezone: settings.timezone,
-            enabled: settings.enabled
+            timezone: settings.timezone || 'Asia/Tokyo',
+            enabled: settings.enabled !== undefined ? settings.enabled : true
           }
-          await settingsAPI.updateSettings('post-time', apiData)
+          
+          const response = await settingsAPI.updateSettings('post-time', apiData)
+          
+          if (!response || !response.success) {
+            throw new Error(response?.error || '設定の保存に失敗しました')
+          }
+          
           set({ postTime: settings, loading: false })
         } catch (error) {
+          console.error('投稿時間設定保存エラー:', error)
+          const errorMessage = error instanceof Error ? error.message : '投稿時間設定の保存に失敗しました'
           set({ 
-            error: '投稿時間設定の保存に失敗しました', 
+            error: errorMessage, 
             loading: false 
           })
+          throw error // 呼び出し元でエラーハンドリングできるように再スロー
         }
       },
 
@@ -631,7 +672,13 @@ export const useAppStore = create<AppStore>()(
         tone: state.tone,
         template: state.template,
         prompt: state.prompt
-      })
+      }),
+      // localStorageアクセスのエラーハンドリング
+      storage: {
+        getItem: safeStorage.getItem,
+        setItem: safeStorage.setItem,
+        removeItem: safeStorage.removeItem
+      }
     }
   )
 )
