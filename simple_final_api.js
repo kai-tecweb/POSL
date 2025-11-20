@@ -7,9 +7,186 @@ const { TwitterApi } = require("twitter-api-v2");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const cron = require("node-cron");
 
 const app = express();
 app.use(express.json());
+
+// ============================================
+// node-cron スケジューラー管理（根本的な解決策）
+// ============================================
+let scheduledTask = null; // 現在のスケジュールタスク
+
+/**
+ * 自動投稿を実行する関数
+ */
+async function executeAutoPost() {
+  let connection;
+  try {
+    console.log(`⏰ [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 自動投稿を実行します`);
+    
+    // APIエンドポイントを直接呼び出す（内部呼び出し）
+    const userId = "demo";
+    connection = await getConnection();
+    
+    // プロンプト生成（設定を反映）
+    const { systemPrompt, userPrompt } = await generatePromptWithSettings(connection, userId);
+    
+    // OpenAIで投稿文生成
+    const openai = getOpenAIClient();
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      max_tokens: 200,
+      temperature: 0.95,
+      top_p: 0.9
+    });
+    
+    const content = completion.choices[0]?.message?.content?.trim() || "";
+    
+    if (!content || content.length > 280) {
+      throw new Error(`生成された投稿文が無効です (length: ${content.length})`);
+    }
+    
+    // X APIで投稿
+    let tweetId = null;
+    let tweetUrl = null;
+    let xPostError = null;
+    
+    try {
+      const twitter = getTwitterClient();
+      const result = await twitter.v2.tweet(content);
+      tweetId = result.data?.id;
+      tweetUrl = tweetId ? `https://x.com/posl_ai/status/${tweetId}` : null;
+      console.log(`✅ X投稿成功: tweetId=${tweetId}`);
+    } catch (xError) {
+      console.error("❌ X投稿失敗:", xError.message);
+      xPostError = xError.message;
+    }
+    
+    // 投稿ログを保存
+    const postData = {
+      content: content,
+      xPostId: tweetId || "",
+      success: !!tweetId,
+      error: xPostError,
+      timestamp: new Date().toISOString(),
+      aiModel: "gpt-4",
+      promptEngine: true
+    };
+    
+    await savePostLog(userId, postData);
+    
+    console.log(`✅ 自動投稿完了: ${tweetUrl || '投稿失敗'}`);
+    
+  } catch (error) {
+    console.error(`❌ 自動投稿エラー: ${error.message}`);
+    console.error(error.stack);
+    
+    // エラーログを保存
+    try {
+      if (!connection) {
+        connection = await getConnection();
+      }
+      await savePostLog("demo", {
+        content: "",
+        xPostId: "",
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        aiModel: "gpt-4",
+        promptEngine: true
+      });
+    } catch (logError) {
+      console.error(`❌ エラーログ保存失敗: ${logError.message}`);
+    }
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+}
+
+/**
+ * JST時刻をcron形式に変換
+ * @param {number} hour - JST時刻（0-23）
+ * @param {number} minute - 分（0-59）
+ * @returns {string} cron形式の文字列（JST時刻で指定）
+ */
+function convertJSTToCronExpression(hour, minute) {
+  // node-cronはタイムゾーンをサポートしているため、JST時刻をそのまま使用
+  // ただし、サーバーのタイムゾーンがUTCの場合は、JSTからUTCに変換する必要がある
+  // ここでは、サーバーのタイムゾーンを確認して適切に変換する
+  
+  // サーバーのタイムゾーンを確認（デフォルトはUTCと仮定）
+  // AWS EC2は通常UTCで動作するため、JSTからUTCに変換
+  // JST (UTC+9) から UTC への変換: (hour - 9 + 24) % 24
+  const utcHour = (hour - 9 + 24) % 24;
+  
+  // cron形式: "分 時 * * *"
+  return `${minute} ${utcHour} * * *`;
+}
+
+/**
+ * スケジュールを設定・更新する関数
+ * @param {number} hour - JST時刻（0-23）
+ * @param {number} minute - 分（0-59）
+ */
+function setupSchedule(hour, minute) {
+  // 既存のスケジュールを停止
+  if (scheduledTask) {
+    console.log(`🛑 既存のスケジュールを停止します`);
+    scheduledTask.stop();
+    scheduledTask = null;
+  }
+  
+  // 新しいスケジュールを設定
+  const cronExpression = convertJSTToCronExpression(hour, minute);
+  console.log(`📅 新しいスケジュールを設定: JST ${hour}:${String(minute).padStart(2, "0")} (cron: ${cronExpression})`);
+  
+  scheduledTask = cron.schedule(cronExpression, executeAutoPost, {
+    scheduled: true,
+    timezone: "UTC" // サーバーがUTCで動作するため
+  });
+  
+  console.log(`✅ スケジュール設定完了: 毎日 JST ${hour}:${String(minute).padStart(2, "0")} に自動投稿を実行します`);
+}
+
+/**
+ * データベースから設定を読み取ってスケジュールを初期化
+ */
+async function initializeSchedule() {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const [rows] = await connection.execute(
+      "SELECT setting_data FROM settings WHERE user_id = ? AND setting_type = ?",
+      ["demo", "post-time"]
+    );
+    
+    if (rows.length > 0) {
+      const settingData = JSON.parse(rows[0].setting_data);
+      if (settingData.enabled && settingData.hour !== undefined && settingData.minute !== undefined) {
+        console.log(`📅 データベースから設定を読み取り: JST ${settingData.hour}:${String(settingData.minute).padStart(2, "0")}`);
+        setupSchedule(settingData.hour, settingData.minute);
+      } else {
+        console.log(`⚠ 投稿時刻設定が無効または無効化されています`);
+      }
+    } else {
+      console.log(`⚠ 投稿時刻設定が見つかりません`);
+    }
+  } catch (error) {
+    console.error(`❌ スケジュール初期化エラー: ${error.message}`);
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+}
 
 // CORS設定
 app.use((req, res, next) => {
@@ -47,149 +224,23 @@ app.put("/dev/settings/post-time", async (req, res) => {
       [JSON.stringify(newSettings), "demo", "post-time"]
     );
     
-    // Cron自動更新
-    // サーバーのタイムゾーンを確認して適切に変換
-    const cronMinute = parseInt(minute);
+    // node-cronでスケジュールを更新（根本的な解決策）
     const jstHour = parseInt(hour);
+    const jstMinute = parseInt(minute);
     
-    // サーバーのタイムゾーンを確認（デフォルトはUTCと仮定）
-    // AWS EC2は通常UTCで動作するため、JSTからUTCに変換
-    // JST (UTC+9) から UTC への変換: (hour - 9 + 24) % 24
-    const cronHour = (jstHour - 9 + 24) % 24;
-    const cronCmd = `${cronMinute} ${cronHour} * * * /home/ubuntu/enhanced-auto-post.sh >> /home/ubuntu/auto-post.log 2>&1`;
+    console.log(`📅 スケジュール更新: JST ${jstHour}:${String(jstMinute).padStart(2, "0")}`);
     
-    console.log(`📅 Cron設定: JST ${jstHour}:${String(cronMinute).padStart(2, "0")} → UTC ${cronHour}:${String(cronMinute).padStart(2, "0")}`);
-    console.log(`📅 Cronコマンド: ${cronCmd}`);
+    // スケジュールを即座に更新（システムcronに依存しない）
+    setupSchedule(jstHour, jstMinute);
     
-    // cron設定を確実に反映させる（根本的な解決策）
-    // 1. 既存のcron設定を削除
-    // 2. 新しいcron設定を追加
-    // 3. 設定を検証
-    // 4. 検証スクリプトを実行して最終確認
-    return new Promise((resolve, reject) => {
-      console.log(`📅 Cron設定開始: JST ${jstHour}:${String(cronMinute).padStart(2, "0")} → UTC ${cronHour}:${String(cronMinute).padStart(2, "0")}`);
-      
-      // Step 1: 既存のcron設定を削除
-      exec('crontab -l 2>/dev/null | grep -v enhanced-auto-post || true', (error1, stdout1, stderr1) => {
-        const existingCron = stdout1 || '';
-        
-        // Step 2: 新しいcron設定を追加
-        const newCronContent = existingCron.trim() 
-          ? `${existingCron.trim()}\n${cronCmd}`
-          : cronCmd;
-        
-        console.log(`📅 新しいcron設定内容:\n${newCronContent}`);
-        
-        // Step 3: crontabに書き込み（確実な方法）
-        const { spawn } = require('child_process');
-        const writeCron = spawn('crontab', ['-'], {
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-        
-        // stdinに書き込み
-        writeCron.stdin.write(newCronContent);
-        writeCron.stdin.end();
-        
-        // タイムアウト設定（10秒）
-        const timeout = setTimeout(() => {
-          writeCron.kill();
-          reject(new Error('Cron設定の書き込みがタイムアウトしました'));
-        }, 10000);
-        
-        writeCron.on('close', (code) => {
-          clearTimeout(timeout);
-        
-        let writeError = '';
-        let writeOutput = '';
-        
-        writeCron.stderr.on('data', (data) => {
-          writeError += data.toString();
-        });
-        
-        writeCron.stdout.on('data', (data) => {
-          writeOutput += data.toString();
-        });
-        
-        writeCron.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`❌ Cron設定書き込みエラー (code: ${code})`);
-            console.error(`❌ stderr: ${writeError}`);
-            console.error(`❌ stdout: ${writeOutput}`);
-            reject(new Error(`Cron設定の書き込みに失敗しました: ${writeError}`));
-            return;
-          }
-          
-          console.log(`✅ Cron設定書き込み成功`);
-          
-          // Step 4: 設定を検証（複数回試行）
-          let retryCount = 0;
-          const maxRetries = 10;
-          const checkInterval = 300; // 300ms間隔
-          
-          const verifyCron = () => {
-            exec('crontab -l 2>/dev/null | grep enhanced-auto-post', (checkError, checkStdout, checkStderr) => {
-              if (checkError && checkError.code !== 1) {
-                console.warn(`⚠ Cron検証エラー (試行 ${retryCount + 1}/${maxRetries}): ${checkError.message}`);
-                retryCount++;
-                if (retryCount < maxRetries) {
-                  setTimeout(verifyCron, checkInterval);
-                } else {
-                  reject(new Error('Cron設定の検証に失敗しました'));
-                }
-                return;
-              }
-              
-              if (checkStdout && checkStdout.trim().includes('enhanced-auto-post')) {
-                const actualCron = checkStdout.trim();
-                console.log(`✅ Cron設定確認成功: ${actualCron}`);
-                
-                // 時刻が正しいか確認
-                if (actualCron.includes(`${cronMinute} ${cronHour}`)) {
-                  console.log(`✅ Cron時刻も正しく設定されています: ${cronMinute} ${cronHour} UTC (${jstHour}:${String(cronMinute).padStart(2, "0")} JST)`);
-                  
-                  // Step 5: 検証スクリプトを実行（オプション）
-                  exec('/home/iwasaki/work/POSL/scripts/verify-cron-setup.sh 2>&1', (verifyError, verifyStdout) => {
-                    if (!verifyError && verifyStdout) {
-                      console.log(`📋 検証スクリプト結果:\n${verifyStdout}`);
-                    }
-                    resolve();
-                  });
-                } else {
-                  console.error(`❌ Cron時刻が期待と異なります`);
-                  console.error(`   期待: ${cronMinute} ${cronHour}`);
-                  console.error(`   実際: ${actualCron}`);
-                  reject(new Error('Cron時刻が正しく設定されていません'));
-                }
-              } else {
-                retryCount++;
-                if (retryCount < maxRetries) {
-                  console.log(`⏳ Cron設定確認中... (試行 ${retryCount + 1}/${maxRetries})`);
-                  setTimeout(verifyCron, checkInterval);
-                } else {
-                  console.error(`❌ Cron設定が見つかりません（${maxRetries}回試行後）`);
-                  reject(new Error('Cron設定の確認に失敗しました'));
-                }
-              }
-            });
-          };
-          
-          // 少し待ってから検証開始
-          setTimeout(verifyCron, 500);
-        });
-      });
-    }).then(() => {
-      // cron設定は非同期で実行されるが、DB保存は確実に成功している
-      console.log(`✅ 保存成功: ${hour}:${String(minute).padStart(2, "0")}`);
-      
-      res.json({
-        success: true,
-        message: `投稿時刻を${hour}:${String(minute).padStart(2, "0")}に設定しました`,
-        cron_set: {
-          jst: `${hour}:${String(minute).padStart(2, "0")}`,
-          utc: `${cronHour}:${String(cronMinute).padStart(2, "0")}`,
-          command: cronCmd
-        }
-      });
+    res.json({
+      success: true,
+      message: `投稿時刻を${hour}:${String(minute).padStart(2, "0")}に設定しました`,
+      schedule: {
+        jst: `${hour}:${String(minute).padStart(2, "0")}`,
+        method: "node-cron",
+        status: scheduledTask ? "active" : "inactive"
+      }
     });
     
   } catch (error) {
@@ -1792,6 +1843,11 @@ JSON形式で以下の構造で回答してください：
   }
 }
 
-app.listen(3001, () => {
+app.listen(3001, async () => {
   console.log("🚀 Simple Final API Server on port 3001");
+  
+  // アプリケーション起動時にスケジュールを初期化
+  console.log("📅 自動投稿スケジュールを初期化中...");
+  await initializeSchedule();
+  console.log("✅ サーバー起動完了");
 });
