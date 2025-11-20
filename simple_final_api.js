@@ -546,6 +546,22 @@ function getTodayWeekTheme(weekThemeSettings) {
   return weekThemeSettings[dayKey] || null;
 }
 
+// 今日のイベント取得
+function getTodaysEvents(eventSettings) {
+  if (!eventSettings || !eventSettings.events || !Array.isArray(eventSettings.events)) {
+    return [];
+  }
+  
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD形式
+  
+  return eventSettings.events.filter(event => {
+    if (!event.date) return false;
+    const eventDate = new Date(event.date).toISOString().split('T')[0];
+    return eventDate === todayStr;
+  });
+}
+
 // プロンプト生成関数
 async function generatePromptWithSettings(connection, userId) {
   // 設定を取得
@@ -565,6 +581,22 @@ async function generatePromptWithSettings(connection, userId) {
     "SELECT JSON_EXTRACT(post_data, '$.content') as content FROM post_logs WHERE user_id = ? AND JSON_EXTRACT(post_data, '$.content') IS NOT NULL ORDER BY created_at DESC LIMIT 5",
     [userId]
   );
+
+  // トレンド情報を取得
+  let trends = [];
+  try {
+    const [trendRows] = await connection.execute(
+      "SELECT trend_name as keyword, tweet_volume, category FROM trends ORDER BY fetched_at DESC LIMIT 5"
+    );
+    trends = trendRows.map(row => ({
+      keyword: row.keyword,
+      volume: row.tweet_volume,
+      category: row.category
+    }));
+  } catch (error) {
+    console.warn("トレンド取得エラー:", error);
+    trends = [];
+  }
 
   // 今日の曜日テーマ
   const todayTheme = getTodayWeekTheme(weekThemeSettings);
