@@ -646,11 +646,35 @@ const TEMPLATE_STRUCTURES = {
   }
 };
 
+// テンプレートIDのマッピング（データベースのID → コードのID）
+const TEMPLATE_ID_MAPPING = {
+  'daily_reflection': 'empathy_start',
+  'learning_insight': 'today_insight',
+  'goal_progress': 'three_points',
+  'gratitude_moment': 'event_special',
+  'creative_thinking': 'punch_line',
+  'problem_solving': 'one_tip',
+  'inspiration_share': 'trend_link',
+  'skill_development': 'fail_learn',
+  'mindfulness': 'casual_talk',
+  'future_planning': 'mini_story'
+};
+
 // テンプレート構造説明を生成
 function getTemplateDescription(templateId) {
-  const template = TEMPLATE_STRUCTURES[templateId];
+  // マッピングを確認
+  const mappedId = TEMPLATE_ID_MAPPING[templateId] || templateId;
+  const template = TEMPLATE_STRUCTURES[mappedId];
   if (!template) {
-    return null;
+    // マッピングされていない場合は、デフォルトのテンプレート構造を返す
+    return `テンプレID: ${templateId}
+
+構成:
+1. 1文目: 読者の共感や気づきを促す一文。
+2. 2文目: 自分の体験や考えを短く紹介する。
+3. 3文目: 前向きなひと言としてまとめる。
+
+文字数目安: 3文で120〜160文字`;
   }
   return `テンプレID: ${templateId}（${template.name}）
 
@@ -737,6 +761,7 @@ async function generatePromptWithSettings(connection, userId) {
 - 売り込み感や宣伝感を強く出しすぎないでください。
 - 専門用語はできるだけ少なくし、使う場合は短い補足説明を入れてください。
 - 毎回の投稿は1つのツイート内で完結させてください（連投前提の構成は禁止）。
+- **重要**: 毎回異なる視点や表現で投稿を作成してください。以前の投稿と同じテーマやキーワードを繰り返さないでください。
 
 ▼文量・形式
 - 140文字前後を目安とし、最大でも280文字以内に収めてください。`;
@@ -906,11 +931,41 @@ async function generatePromptWithSettings(connection, userId) {
   // ユーザープロンプト構築（プロンプト設計書11-3に準拠）
   let userPrompt = "";
 
+  // 最近の投稿履歴を最初に反映（類似投稿を避けるため - 重要）
+  if (recentPosts && recentPosts.length > 0) {
+    const recentContents = recentPosts
+      .map(p => {
+        try {
+          const content = typeof p.content === 'string' ? JSON.parse(p.content) : p.content;
+          return typeof content === 'string' ? content : '';
+        } catch {
+          return '';
+        }
+      })
+      .filter(c => c && c.length > 0)
+      .slice(0, 5); // 最近5件を参照
+    
+    if (recentContents.length > 0) {
+      userPrompt += `# 重要：投稿の多様性を確保
+以下の最近の投稿とは**完全に異なる内容・視点・表現・テーマ**で投稿を作成してください。
+同じテーマやキーワード、表現パターンを繰り返さないでください。
+以前の投稿とは異なる角度から、新しい話題や視点で投稿してください。
+
+最近の投稿例:
+`;
+      recentContents.forEach((content, index) => {
+        const shortContent = content.length > 100 ? content.substring(0, 100) + '...' : content;
+        userPrompt += `${index + 1}. ${shortContent}\n`;
+      });
+      userPrompt += "\n";
+    }
+  }
+
   // 今日の曜日テーマを反映
   if (todayTheme) {
     userPrompt += `# 今日の投稿テーマ（曜日テーマ）
 今日は「${todayTheme}」をテーマにした投稿を書いてください。
-このテーマに沿った投稿を作成してください。
+ただし、上記の最近の投稿とは異なる視点や表現で、このテーマに沿った投稿を作成してください。
 
 `;
   }
