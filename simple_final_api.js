@@ -62,39 +62,72 @@ app.put("/dev/settings/post-time", async (req, res) => {
     console.log(`📅 Cronコマンド: ${cronCmd}`);
     
     // cron設定を同期的に実行してエラーを確実に検出
+    // 複数回試行して確実に設定を反映させる
     return new Promise((resolve, reject) => {
-      // cron設定コマンドを実行
+      // cron設定コマンドを実行（|| true で既存のcronがない場合もエラーにしない）
       const setCronCmd = `(crontab -l 2>/dev/null | grep -v enhanced-auto-post || true; echo "${cronCmd}") | crontab -`;
       console.log(`📅 Cron設定コマンド実行: ${setCronCmd}`);
       
-      exec(setCronCmd, { timeout: 5000 }, (error, stdout, stderr) => {
+      exec(setCronCmd, { timeout: 10000 }, (error, stdout, stderr) => {
         if (error) {
           console.error(`❌ Cron設定エラー: ${error.message}`);
           console.error(`❌ stderr: ${stderr}`);
           console.error(`❌ stdout: ${stdout}`);
-          // cron設定エラーでもDB保存は成功しているので、警告として記録
-          console.warn(`⚠ Cron設定に失敗しましたが、データベースには保存されました。`);
-          console.warn(`⚠ 手動でcronを設定してください: ${cronCmd}`);
-          console.warn(`⚠ または、scripts/fix-cron-immediately.sh を実行してください`);
-        } else {
-          console.log(`✅ Cron設定コマンド実行成功`);
-          console.log(`📅 stdout: ${stdout}`);
-          
-          // 設定確認のため、実際のcron設定を確認（少し待ってから）
-          setTimeout(() => {
-            exec('crontab -l 2>/dev/null | grep enhanced-auto-post', (checkError, checkStdout, checkStderr) => {
-              if (checkError) {
-                console.warn(`⚠ Cron設定の確認に失敗: ${checkError.message}`);
-                console.warn(`⚠ stderr: ${checkStderr}`);
-              } else if (checkStdout && checkStdout.trim()) {
-                console.log(`✅ Cron設定確認成功: ${checkStdout.trim()}`);
-              } else {
-                console.warn(`⚠ Cron設定が見つかりません（確認失敗）`);
-              }
-            });
-          }, 500);
+          reject(error);
+          return;
         }
-        resolve(); // エラーでもresolve（DB保存は成功しているため）
+        
+        console.log(`✅ Cron設定コマンド実行成功`);
+        if (stdout) console.log(`📅 stdout: ${stdout}`);
+        
+        // 設定確認を複数回試行（確実に反映されているか確認）
+        let retryCount = 0;
+        const maxRetries = 5;
+        const checkInterval = 200; // 200ms間隔
+        
+        const checkCron = () => {
+          exec('crontab -l 2>/dev/null | grep enhanced-auto-post', (checkError, checkStdout, checkStderr) => {
+            if (checkError && checkError.code !== 1) { // code 1はgrepで見つからない場合（正常）
+              console.warn(`⚠ Cron設定の確認に失敗 (試行 ${retryCount + 1}/${maxRetries}): ${checkError.message}`);
+              if (checkStderr) console.warn(`⚠ stderr: ${checkStderr}`);
+              
+              retryCount++;
+              if (retryCount < maxRetries) {
+                setTimeout(checkCron, checkInterval);
+              } else {
+                console.warn(`⚠ Cron設定の確認が${maxRetries}回失敗しました`);
+                resolve(); // 確認失敗でも設定は成功している可能性があるのでresolve
+              }
+            } else if (checkStdout && checkStdout.trim().includes('enhanced-auto-post')) {
+              const actualCron = checkStdout.trim();
+              console.log(`✅ Cron設定確認成功 (試行 ${retryCount + 1}): ${actualCron}`);
+              
+              // 設定されたcronが期待通りか確認
+              if (actualCron.includes(`${cronMinute} ${cronHour}`)) {
+                console.log(`✅ Cron時刻も正しく設定されています: ${cronMinute} ${cronHour}`);
+              } else {
+                console.warn(`⚠ Cron時刻が期待と異なる可能性があります`);
+                console.warn(`   期待: ${cronMinute} ${cronHour}`);
+                console.warn(`   実際: ${actualCron}`);
+              }
+              resolve();
+            } else {
+              // grepで見つからない場合
+              retryCount++;
+              if (retryCount < maxRetries) {
+                console.log(`⏳ Cron設定確認中... (試行 ${retryCount + 1}/${maxRetries})`);
+                setTimeout(checkCron, checkInterval);
+              } else {
+                console.error(`❌ Cron設定が見つかりません（${maxRetries}回試行後）`);
+                console.error(`   設定コマンド: ${cronCmd}`);
+                reject(new Error('Cron設定の確認に失敗しました'));
+              }
+            }
+          });
+        };
+        
+        // 少し待ってから確認開始
+        setTimeout(checkCron, 300);
       });
     }).then(() => {
       // cron設定は非同期で実行されるが、DB保存は確実に成功している
