@@ -43,14 +43,32 @@ const AudioDiary = () => {
 
   const startRecording = async () => {
     try {
-      // マイク権限の確認
-      const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+      // HTTPSチェック（getUserMediaはHTTPSまたはlocalhostでのみ動作）
+      const isSecureContext = window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       
-      if (permissionStatus.state === 'denied') {
-        alert('マイクへのアクセスが拒否されています。ブラウザの設定でマイクの使用を許可してください。')
+      if (!isSecureContext) {
+        alert('音声録音機能はHTTPS接続またはlocalhostでのみ利用できます。\n\n現在はHTTP接続のため、音声ファイルのアップロード機能をご利用ください。')
         return
       }
 
+      // マイク権限の確認（可能な場合）
+      let permissionState = 'prompt'
+      try {
+        if (navigator.permissions && navigator.permissions.query) {
+          const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+          permissionState = permissionStatus.state
+          
+          if (permissionState === 'denied') {
+            alert('マイクへのアクセスが拒否されています。\n\n【解決方法】\n1. ブラウザのアドレスバーにあるマイクアイコン（🔒）をクリック\n2. 「マイク」を「許可」に変更\n3. ページを再読み込みしてください\n\nまたは、音声ファイルのアップロード機能をご利用ください。')
+            return
+          }
+        }
+      } catch (permError) {
+        // 権限APIがサポートされていない場合は続行
+        console.log('Permission API not supported, continuing...')
+      }
+
+      // マイクアクセスの要求
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -100,14 +118,35 @@ const AudioDiary = () => {
     } catch (error: any) {
       console.error('Recording error:', error)
       
-      if (error.name === 'NotAllowedError') {
-        alert('マイクへのアクセスが拒否されました。ブラウザのアドレスバーにあるマイクアイコンをクリックして許可してください。')
-      } else if (error.name === 'NotFoundError') {
-        alert('マイクが見つかりません。マイクが接続されていることを確認してください。')
-      } else if (error.name === 'NotSupportedError') {
-        alert('お使いのブラウザは音声録音をサポートしていません。Chrome、Firefox、Safariの最新版をお使いください。')
+      let errorMessage = ''
+      let showFileUploadOption = false
+      
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMessage = 'マイクへのアクセスが拒否されました。\n\n【解決方法】\n1. ブラウザのアドレスバーにあるマイクアイコン（🔒）をクリック\n2. 「マイク」を「許可」に変更\n3. ページを再読み込みしてください\n\nまたは、音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        errorMessage = 'マイクが見つかりません。\n\n【確認事項】\n1. マイクが接続されているか確認してください\n2. 他のアプリケーションがマイクを使用していないか確認してください\n\nまたは、音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else if (error.name === 'NotSupportedError' || error.name === 'NotReadableError') {
+        errorMessage = 'お使いのブラウザまたはデバイスは音声録音をサポートしていません。\n\n【推奨】\nChrome、Firefox、Safariの最新版をお使いください。\n\nまたは、音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else if (error.name === 'SecurityError' || error.name === 'TypeError') {
+        errorMessage = 'セキュリティ上の理由でマイクにアクセスできません。\n\n【原因】\nHTTP接続ではマイクアクセスが許可されていません。\n\n【解決方法】\n音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
       } else {
-        alert(`録音を開始できませんでした: ${error.message || '不明なエラーが発生しました'}`)
+        errorMessage = `録音を開始できませんでした: ${error.message || '不明なエラーが発生しました'}\n\n音声ファイルのアップロード機能をご利用ください。`
+        showFileUploadOption = true
+      }
+      
+      alert(errorMessage)
+      
+      // ファイルアップロードを促す
+      if (showFileUploadOption && fileInputRef.current) {
+        setTimeout(() => {
+          if (window.confirm('音声ファイルのアップロードに切り替えますか？')) {
+            fileInputRef.current?.click()
+          }
+        }, 500)
       }
     }
   }
