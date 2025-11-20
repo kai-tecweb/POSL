@@ -52,11 +52,29 @@ const AudioDiary = () => {
   const startRecording = async () => {
     try {
       // HTTPSチェック（getUserMediaはHTTPSまたはlocalhostでのみ動作）
+      // 注意: 一部のブラウザではHTTP接続でも動作する場合がありますが、セキュリティ上の理由から推奨されません
       const isSecureContext = window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       
       if (!isSecureContext) {
-        alert('音声録音機能はHTTPS接続またはlocalhostでのみ利用できます。\n\n現在はHTTP接続のため、音声ファイルのアップロード機能をご利用ください。')
-        return
+        // HTTP接続時は警告を表示（ただし、試行は許可）
+        const shouldContinue = window.confirm(
+          '⚠️ HTTP接続ではマイクアクセスが制限される可能性があります。\n\n' +
+          '【推奨】\n' +
+          '音声ファイルのアップロード機能をご利用ください（HTTP接続でも完全に動作します）。\n\n' +
+          '【続行】\n' +
+          'それでも録音を試行しますか？\n' +
+          '（ブラウザによっては動作しない場合があります）'
+        )
+        
+        if (!shouldContinue) {
+          // ファイルアップロードに誘導
+          if (fileInputRef.current) {
+            setTimeout(() => {
+              fileInputRef.current?.click()
+            }, 300)
+          }
+          return
+        }
       }
 
       // マイク権限の確認（可能な場合）
