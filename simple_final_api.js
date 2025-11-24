@@ -15,7 +15,7 @@ app.use(express.json());
 // ============================================
 // node-cron スケジューラー管理（根本的な解決策）
 // ============================================
-let scheduledTask = null; // 現在のスケジュールタスク
+let scheduledTasks = []; // 複数のスケジュールタスクを管理（1日3回対応）
 
 /**
  * 自動投稿を実行する関数
@@ -41,8 +41,8 @@ async function executeAutoPost() {
         { role: "user", content: userPrompt }
       ],
       max_tokens: 200,
-      temperature: 0.95,
-      top_p: 0.9
+      temperature: 0.95, // 多様性を高める
+      top_p: 0.9 // 多様性をさらに高める
     });
     
     const content = completion.choices[0]?.message?.content?.trim() || "";
@@ -131,28 +131,57 @@ function convertJSTToCronExpression(hour, minute) {
 }
 
 /**
- * スケジュールを設定・更新する関数
+ * すべてのスケジュールを停止する関数
+ */
+function stopAllSchedules() {
+  scheduledTasks.forEach((task, index) => {
+    if (task) {
+      console.log(`🛑 スケジュール ${index + 1} を停止します`);
+      task.stop();
+    }
+  });
+  scheduledTasks = [];
+}
+
+/**
+ * 複数のスケジュールを設定・更新する関数（1日3回対応）
+ * @param {Array<{hour: number, minute: number}>} schedules - スケジュール配列（JST時刻）
+ */
+function setupSchedules(schedules) {
+  // 既存のスケジュールをすべて停止
+  stopAllSchedules();
+  
+  if (!schedules || schedules.length === 0) {
+    console.log(`⚠ スケジュールが設定されていません`);
+    return;
+  }
+  
+  // 各スケジュールを設定
+  schedules.forEach((schedule, index) => {
+    const { hour, minute } = schedule;
+    const cronExpression = convertJSTToCronExpression(hour, minute);
+    console.log(`📅 スケジュール ${index + 1} を設定: JST ${hour}:${String(minute).padStart(2, "0")} (cron: ${cronExpression})`);
+    
+    const task = cron.schedule(cronExpression, executeAutoPost, {
+      scheduled: true,
+      timezone: "UTC" // サーバーがUTCで動作するため
+    });
+    
+    scheduledTasks.push(task);
+    console.log(`✅ スケジュール ${index + 1} 設定完了: 毎日 JST ${hour}:${String(minute).padStart(2, "0")} に自動投稿を実行します`);
+  });
+  
+  console.log(`✅ 全スケジュール設定完了: 合計 ${scheduledTasks.length} 件`);
+}
+
+/**
+ * 単一のスケジュールを設定・更新する関数（後方互換性のため）
  * @param {number} hour - JST時刻（0-23）
  * @param {number} minute - 分（0-59）
  */
 function setupSchedule(hour, minute) {
-  // 既存のスケジュールを停止
-  if (scheduledTask) {
-    console.log(`🛑 既存のスケジュールを停止します`);
-    scheduledTask.stop();
-    scheduledTask = null;
-  }
-  
-  // 新しいスケジュールを設定
-  const cronExpression = convertJSTToCronExpression(hour, minute);
-  console.log(`📅 新しいスケジュールを設定: JST ${hour}:${String(minute).padStart(2, "0")} (cron: ${cronExpression})`);
-  
-  scheduledTask = cron.schedule(cronExpression, executeAutoPost, {
-    scheduled: true,
-    timezone: "UTC" // サーバーがUTCで動作するため
-  });
-  
-  console.log(`✅ スケジュール設定完了: 毎日 JST ${hour}:${String(minute).padStart(2, "0")} に自動投稿を実行します`);
+  // 単一スケジュールを配列に変換して設定
+  setupSchedules([{ hour, minute }]);
 }
 
 /**
@@ -169,20 +198,46 @@ async function initializeSchedule() {
     );
     
     if (rows.length > 0) {
-      const settingData = JSON.parse(rows[0].setting_data);
-      if (settingData.enabled && settingData.hour !== undefined && settingData.minute !== undefined) {
-        console.log(`📅 データベースから設定を読み取り: JST ${settingData.hour}:${String(settingData.minute).padStart(2, "0")}`);
-        setupSchedule(settingData.hour, settingData.minute);
+      const settingData = typeof rows[0].setting_data === 'string' 
+        ? JSON.parse(rows[0].setting_data) 
+        : rows[0].setting_data;
+      
+      if (settingData.enabled) {
+        // 複数スケジュール対応（schedules配列がある場合）
+        if (settingData.schedules && Array.isArray(settingData.schedules) && settingData.schedules.length > 0) {
+          console.log(`📅 データベースから複数スケジュールを読み取り: ${settingData.schedules.length} 件`);
+          setupSchedules(settingData.schedules);
+        }
+        // 単一スケジュール対応（後方互換性）
+        else if (settingData.hour !== undefined && settingData.minute !== undefined) {
+          console.log(`📅 データベースから設定を読み取り: JST ${settingData.hour}:${String(settingData.minute).padStart(2, "0")}`);
+          setupSchedule(settingData.hour, settingData.minute);
+        } else {
+          console.log(`⚠ 投稿時刻設定が無効または無効化されています`);
+        }
       } else {
-        console.log(`⚠ 投稿時刻設定が無効または無効化されています`);
+        console.log(`⚠ 投稿時刻設定が無効化されています`);
       }
     } else {
-      console.log(`⚠ 投稿時刻設定が見つかりません`);
+      // デフォルト設定: 1日3回（8:00, 12:00, 20:00 JST）
+      console.log(`⚠ 投稿時刻設定が見つかりません。デフォルト設定（8:00, 12:00, 20:00 JST）を適用します`);
+      setupSchedules([
+        { hour: 8, minute: 0 },
+        { hour: 12, minute: 0 },
+        { hour: 20, minute: 0 }
+      ]);
     }
   } catch (error) {
     console.error(`❌ スケジュール初期化エラー: ${error.message}`);
     console.error(`   データベース接続に失敗しました。後で再試行してください。`);
     // エラーが発生してもサーバーは起動を続ける
+    // デフォルト設定を適用
+    console.log(`📅 デフォルト設定（8:00, 12:00, 20:00 JST）を適用します`);
+    setupSchedules([
+      { hour: 8, minute: 0 },
+      { hour: 12, minute: 0 },
+      { hour: 20, minute: 0 }
+    ]);
   } finally {
     if (connection) {
       await connection.end();
@@ -199,12 +254,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// 投稿時刻設定API
+// 投稿時刻設定API（複数時刻対応）
 app.put("/dev/settings/post-time", async (req, res) => {
   let connection;
   try {
-    const { hour, minute } = req.body;
-    console.log(`🔥 フロントエンド保存: ${hour}:${minute} at ${new Date().toLocaleString()}`);
+    const { hour, minute, schedules } = req.body;
+    console.log(`🔥 フロントエンド保存: ${JSON.stringify(req.body)} at ${new Date().toLocaleString()}`);
     
     connection = await mysql.createConnection({
       host: process.env.MYSQL_HOST,
@@ -214,12 +269,36 @@ app.put("/dev/settings/post-time", async (req, res) => {
       database: process.env.MYSQL_DATABASE
     });
     
-    const newSettings = {
-      hour: parseInt(hour),
-      minute: parseInt(minute),
-      timezone: "Asia/Tokyo",
-      enabled: true
-    };
+    let newSettings;
+    let schedulesToSetup = [];
+    
+    // 複数スケジュール対応（schedules配列がある場合）
+    if (schedules && Array.isArray(schedules) && schedules.length > 0) {
+      newSettings = {
+        schedules: schedules.map(s => ({
+          hour: parseInt(s.hour),
+          minute: parseInt(s.minute || 0)
+        })),
+        timezone: "Asia/Tokyo",
+        enabled: true
+      };
+      schedulesToSetup = newSettings.schedules;
+    }
+    // 単一スケジュール対応（後方互換性）
+    else if (hour !== undefined && minute !== undefined) {
+      newSettings = {
+        hour: parseInt(hour),
+        minute: parseInt(minute),
+        timezone: "Asia/Tokyo",
+        enabled: true
+      };
+      schedulesToSetup = [{ hour: newSettings.hour, minute: newSettings.minute }];
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        error: "hourとminute、またはschedules配列が必要です" 
+      });
+    }
     
     await connection.execute(
       "UPDATE settings SET setting_data = ?, updated_at = NOW() WHERE user_id = ? AND setting_type = ?",
@@ -227,21 +306,27 @@ app.put("/dev/settings/post-time", async (req, res) => {
     );
     
     // node-cronでスケジュールを更新（根本的な解決策）
-    const jstHour = parseInt(hour);
-    const jstMinute = parseInt(minute);
-    
-    console.log(`📅 スケジュール更新: JST ${jstHour}:${String(jstMinute).padStart(2, "0")}`);
+    console.log(`📅 スケジュール更新: ${schedulesToSetup.length} 件`);
     
     // スケジュールを即座に更新（システムcronに依存しない）
-    setupSchedule(jstHour, jstMinute);
+    if (schedulesToSetup.length === 1) {
+      setupSchedule(schedulesToSetup[0].hour, schedulesToSetup[0].minute);
+    } else {
+      setupSchedules(schedulesToSetup);
+    }
+    
+    const scheduleList = schedulesToSetup.map(s => 
+      `${s.hour}:${String(s.minute).padStart(2, "0")}`
+    ).join(", ");
     
     res.json({
       success: true,
-      message: `投稿時刻を${hour}:${String(minute).padStart(2, "0")}に設定しました`,
+      message: `投稿時刻を${scheduleList}に設定しました`,
       schedule: {
-        jst: `${hour}:${String(minute).padStart(2, "0")}`,
+        schedules: schedulesToSetup,
         method: "node-cron",
-        status: scheduledTask ? "active" : "inactive"
+        status: scheduledTasks.length > 0 ? "active" : "inactive",
+        count: scheduledTasks.length
       }
     });
     
@@ -900,9 +985,9 @@ async function generatePromptWithSettings(connection, userId) {
     getSetting(connection, userId, 'template')
   ]);
 
-  // 最近の投稿履歴を取得（類似投稿を避けるため）
+  // 最近の投稿履歴を取得（類似投稿を避けるため）- 24時間以内の投稿も含める
   const [recentPosts] = await connection.execute(
-    "SELECT JSON_EXTRACT(post_data, '$.content') as content FROM post_logs WHERE user_id = ? AND JSON_EXTRACT(post_data, '$.content') IS NOT NULL ORDER BY created_at DESC LIMIT 5",
+    "SELECT JSON_EXTRACT(post_data, '$.content') as content FROM post_logs WHERE user_id = ? AND JSON_EXTRACT(post_data, '$.content') IS NOT NULL AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) ORDER BY created_at DESC LIMIT 10",
     [userId]
   );
 
@@ -1020,7 +1105,7 @@ async function generatePromptWithSettings(connection, userId) {
         }
       })
       .filter(c => c && c.length > 0)
-      .slice(0, 5); // 最近5件を参照
+      .slice(0, 10); // 最近10件を参照（24時間以内）
     
     if (recentContents.length > 0) {
       userPrompt += `# 重要：投稿の多様性を確保
@@ -1088,9 +1173,36 @@ ${personaProfile.summary}`;
 
   // テンプレート情報を反映（プロンプト設計書の要件）
   if (templateSettings && templateSettings.enabled_templates && templateSettings.enabled_templates.length > 0) {
-    // ランダムにテンプレートを選択（多様性を確保）
-    const randomIndex = Math.floor(Math.random() * templateSettings.enabled_templates.length);
-    const selectedTemplateId = templateSettings.enabled_templates[randomIndex];
+    // 最近使用したテンプレートを避けるため、過去24時間の投稿から使用テンプレートを取得
+    let recentlyUsedTemplates = [];
+    try {
+      const [recentTemplatePosts] = await connection.execute(
+        "SELECT JSON_EXTRACT(post_data, '$.template_id') as template_id FROM post_logs WHERE user_id = ? AND JSON_EXTRACT(post_data, '$.template_id') IS NOT NULL AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) ORDER BY created_at DESC LIMIT 5",
+        [userId]
+      );
+      recentlyUsedTemplates = recentTemplatePosts
+        .map(p => {
+          try {
+            return typeof p.template_id === 'string' ? JSON.parse(p.template_id) : p.template_id;
+          } catch {
+            return null;
+          }
+        })
+        .filter(t => t);
+    } catch (error) {
+      console.warn("最近のテンプレート取得エラー:", error);
+    }
+    
+    // 最近使用していないテンプレートを優先的に選択（多様性を確保）
+    const availableTemplates = templateSettings.enabled_templates.filter(
+      t => !recentlyUsedTemplates.includes(t)
+    );
+    const templatesToChooseFrom = availableTemplates.length > 0 
+      ? availableTemplates 
+      : templateSettings.enabled_templates; // すべて使用済みの場合は全テンプレートから選択
+    
+    const randomIndex = Math.floor(Math.random() * templatesToChooseFrom.length);
+    const selectedTemplateId = templatesToChooseFrom[randomIndex];
     const templateDesc = getTemplateDescription(selectedTemplateId);
     
     if (templateDesc) {
@@ -1229,6 +1341,19 @@ app.post("/dev/post/ai-with-x", async (req, res) => {
     
     // OpenAIで投稿文生成（多様性を高めるためtemperatureを上げる）
     const openai = getOpenAIClient();
+    
+    // 時間帯に応じてtemperatureを微調整（朝はやや低め、夜は高め）
+    const currentHour = new Date().getHours(); // UTC時刻
+    const jstHour = (currentHour + 9) % 24; // JST時刻に変換
+    let temperature = 0.95; // デフォルト
+    if (jstHour >= 6 && jstHour < 12) {
+      temperature = 0.92; // 朝はやや低め（安定性重視）
+    } else if (jstHour >= 12 && jstHour < 18) {
+      temperature = 0.95; // 昼は標準
+    } else {
+      temperature = 0.98; // 夜は高め（多様性重視）
+    }
+    
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
@@ -1236,7 +1361,7 @@ app.post("/dev/post/ai-with-x", async (req, res) => {
         { role: "user", content: userPrompt }
       ],
       max_tokens: 200,
-      temperature: 0.95, // 0.8 → 0.95に変更（多様性を高める）
+      temperature: temperature, // 時間帯に応じて調整
       top_p: 0.9 // 多様性をさらに高める
     });
     
