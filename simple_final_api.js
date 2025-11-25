@@ -1289,8 +1289,8 @@ ${personaProfile.summary}`;
 `;
     recentDiaries.slice(0, 3).forEach((diary, index) => {
       if (diary.content) {
-        const summary = diary.content.length > 100 
-          ? diary.content.substring(0, 100) + '...'
+        const summary = diary.content.length > 250 
+          ? diary.content.substring(0, 250) + '...'
           : diary.content;
         userPrompt += `${index + 1}. ${summary}\n`;
       }
