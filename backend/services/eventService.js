@@ -1,13 +1,13 @@
 /**
  * イベントサービス
  * POSL V1.1 Phase 1: イベント投稿機能
+ * POSL V1.1 Phase 3-3: 独自イベント（personal）CRUD API
  * 
  * 機能:
  * - 今日のイベント取得
  * - タイプ別イベント取得
  * - イベントON/OFF切り替え
- * 
- * 注意: Phase 1ではCreate/Update/Deleteは実装しません
+ * - 独自イベント（personal）CRUD操作
  */
 
 const mysql = require("mysql2/promise");
@@ -68,28 +68,38 @@ async function getTodayEvents(date = null) {
 
 /**
  * タイプ別イベントを取得
- * @param {string} eventType - イベントタイプ（'fixed' または 'today'）
+ * @param {string} eventType - イベントタイプ（'fixed', 'today', 'personal'）
+ * @param {string} userId - ユーザーID（personalの場合は必須、デフォルト: 'system'）
  * @returns {Promise<Array>} イベント配列
  * 
- * 処理: event_type別にsystemイベントを取得
+ * 処理: event_type別にイベントを取得
+ * - fixed/today: user_id='system'のみ
+ * - personal: 指定されたuser_idのイベント
  */
-async function getEventsByType(eventType) {
+async function getEventsByType(eventType, userId = 'system') {
   let connection;
   try {
     // バリデーション
-    if (!['fixed', 'today'].includes(eventType)) {
-      throw new Error("eventTypeは 'fixed' または 'today' である必要があります");
+    if (!['fixed', 'today', 'personal'].includes(eventType)) {
+      throw new Error("eventTypeは 'fixed', 'today', または 'personal' である必要があります");
     }
     
     connection = await getConnection();
     
-    const query = `
-      SELECT * FROM events 
-      WHERE event_type = ? AND user_id = 'system' AND is_enabled = TRUE
-      ORDER BY date, id
-    `;
+    let query;
+    let params;
     
-    const [rows] = await connection.execute(query, [eventType]);
+    if (eventType === 'personal') {
+      // personalの場合はuser_idでフィルタ
+      query = "SELECT * FROM events WHERE event_type = ? AND user_id = ? ORDER BY date ASC";
+      params = [eventType, userId];
+    } else {
+      // fixed/todayの場合は既存のロジック
+      query = "SELECT * FROM events WHERE event_type = ? AND user_id = 'system' ORDER BY date ASC";
+      params = [eventType];
+    }
+    
+    const [rows] = await connection.execute(query, params);
     await connection.end();
     
     return rows;
@@ -147,8 +157,222 @@ async function toggleEvent(eventId) {
   }
 }
 
+/**
+ * 独自イベント（personal）一覧を取得
+ * @param {string} userId - ユーザーID
+ * @returns {Promise<Array>} イベント配列
+ */
+async function getPersonalEvents(userId) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const [rows] = await connection.execute(
+      "SELECT * FROM events WHERE user_id = ? AND event_type = 'personal' ORDER BY date ASC",
+      [userId]
+    );
+    
+    await connection.end();
+    return rows;
+  } catch (error) {
+    if (connection) await connection.end();
+    console.error(`❌ 独自イベント取得エラー (userId=${userId}):`, error);
+    throw error;
+  }
+}
+
+/**
+ * 特定のイベントを取得
+ * @param {number} eventId - イベントID
+ * @param {string} userId - ユーザーID（権限確認用）
+ * @returns {Promise<Object>} イベントオブジェクト
+ */
+async function getEvent(eventId, userId) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const [rows] = await connection.execute(
+      "SELECT * FROM events WHERE id = ? AND user_id = ?",
+      [eventId, userId]
+    );
+    
+    await connection.end();
+    
+    if (rows.length === 0) {
+      throw new Error('イベントが見つかりません');
+    }
+    
+    return rows[0];
+  } catch (error) {
+    if (connection) await connection.end();
+    console.error(`❌ イベント取得エラー (id=${eventId}, userId=${userId}):`, error);
+    throw error;
+  }
+}
+
+/**
+ * 独自イベント（personal）を作成
+ * @param {Object} eventData - イベントデータ
+ * @param {string} eventData.user_id - ユーザーID（必須）
+ * @param {string} eventData.title - イベント名（必須）
+ * @param {string} eventData.date - 日付（必須、YYYY-MM-DD形式）
+ * @param {string} eventData.description - 説明（オプション）
+ * @param {boolean} eventData.is_enabled - 有効/無効（オプション、デフォルト: true）
+ * @returns {Promise<Object>} 作成されたイベント
+ */
+async function createPersonalEvent(eventData) {
+  let connection;
+  try {
+    const { user_id, title, date, description, is_enabled } = eventData;
+    
+    // バリデーション
+    if (!user_id || user_id.trim() === '') {
+      throw new Error('ユーザーIDは必須です');
+    }
+    if (!title || title.trim() === '') {
+      throw new Error('イベント名は必須です');
+    }
+    if (!date) {
+      throw new Error('日付は必須です');
+    }
+    
+    connection = await getConnection();
+    
+    const [result] = await connection.execute(
+      `INSERT INTO events (user_id, event_type, title, date, description, is_enabled)
+       VALUES (?, 'personal', ?, ?, ?, ?)`,
+      [user_id, title, date, description || null, is_enabled !== undefined ? is_enabled : true]
+    );
+    
+    const [rows] = await connection.execute(
+      "SELECT * FROM events WHERE id = ?",
+      [result.insertId]
+    );
+    
+    await connection.end();
+    return rows[0];
+  } catch (error) {
+    if (connection) await connection.end();
+    console.error("❌ 独自イベント作成エラー:", error);
+    throw error;
+  }
+}
+
+/**
+ * 独自イベント（personal）を更新
+ * @param {number} eventId - イベントID
+ * @param {Object} eventData - 更新データ
+ * @param {string} userId - ユーザーID（権限確認用）
+ * @returns {Promise<Object>} 更新されたイベント
+ */
+async function updatePersonalEvent(eventId, eventData, userId) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    // 存在確認と権限確認
+    const [existing] = await connection.execute(
+      "SELECT * FROM events WHERE id = ? AND user_id = ? AND event_type = 'personal'",
+      [eventId, userId]
+    );
+    
+    if (existing.length === 0) {
+      throw new Error('イベントが見つからないか、編集権限がありません');
+    }
+    
+    // バリデーション
+    if (eventData.title !== undefined && (!eventData.title || eventData.title.trim() === '')) {
+      throw new Error('イベント名は必須です');
+    }
+    
+    // 更新
+    const updates = [];
+    const values = [];
+    
+    if (eventData.title !== undefined) {
+      updates.push('title = ?');
+      values.push(eventData.title);
+    }
+    if (eventData.date !== undefined) {
+      updates.push('date = ?');
+      values.push(eventData.date);
+    }
+    if (eventData.description !== undefined) {
+      updates.push('description = ?');
+      values.push(eventData.description);
+    }
+    if (eventData.is_enabled !== undefined) {
+      updates.push('is_enabled = ?');
+      values.push(eventData.is_enabled);
+    }
+    
+    if (updates.length === 0) {
+      throw new Error('更新する項目がありません');
+    }
+    
+    values.push(eventId);
+    await connection.execute(
+      `UPDATE events SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      values
+    );
+    
+    const [rows] = await connection.execute(
+      "SELECT * FROM events WHERE id = ?",
+      [eventId]
+    );
+    
+    await connection.end();
+    return rows[0];
+  } catch (error) {
+    if (connection) await connection.end();
+    console.error(`❌ 独自イベント更新エラー (id=${eventId}):`, error);
+    throw error;
+  }
+}
+
+/**
+ * 独自イベント（personal）を削除
+ * @param {number} eventId - イベントID
+ * @param {string} userId - ユーザーID（権限確認用）
+ * @returns {Promise<Object>} 削除結果
+ */
+async function deletePersonalEvent(eventId, userId) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    // 存在確認と権限確認
+    const [existing] = await connection.execute(
+      "SELECT * FROM events WHERE id = ? AND user_id = ? AND event_type = 'personal'",
+      [eventId, userId]
+    );
+    
+    if (existing.length === 0) {
+      throw new Error('イベントが見つからないか、削除権限がありません');
+    }
+    
+    await connection.execute(
+      "DELETE FROM events WHERE id = ?",
+      [eventId]
+    );
+    
+    await connection.end();
+    return { success: true, message: 'イベントを削除しました' };
+  } catch (error) {
+    if (connection) await connection.end();
+    console.error(`❌ 独自イベント削除エラー (id=${eventId}):`, error);
+    throw error;
+  }
+}
+
 module.exports = {
   getTodayEvents,
   getEventsByType,
-  toggleEvent
+  toggleEvent,
+  getPersonalEvents,
+  getEvent,
+  createPersonalEvent,
+  updatePersonalEvent,
+  deletePersonalEvent
 };
