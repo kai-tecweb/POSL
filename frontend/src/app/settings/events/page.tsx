@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Card } from '@/components'
+import { Card, Button } from '@/components'
 import { eventsAPI } from '@/utils/api'
 
 interface Event {
@@ -25,6 +25,18 @@ const EventsPage = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set())
+
+  // 編集ハンドラ（Phase 3-4-4で本実装）
+  const handleEdit = (event: Event) => {
+    console.log('Edit event:', event)
+    // TODO: Phase 3-4-4で実装
+  }
+
+  // 削除ハンドラ（Phase 3-4-5で本実装）
+  const handleDelete = (eventId: number) => {
+    console.log('Delete event:', eventId)
+    // TODO: Phase 3-4-5で本実装
+  }
 
   // イベント一覧を取得
   const fetchEvents = async (type: 'fixed' | 'today' | 'personal') => {
@@ -235,7 +247,7 @@ const EventsPage = () => {
                   </p>
                 )}
                 <div className="mt-3 pt-3 border-t border-gray-100">
-                  <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
                     <span className={`
                       px-2 py-1 rounded-full
                       ${event.is_enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}
@@ -246,6 +258,27 @@ const EventsPage = () => {
                       <span className="text-primary-600">更新中...</span>
                     )}
                   </div>
+                  
+                  {activeTab === 'personal' && (
+                    <div className="flex space-x-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleEdit(event)}
+                        className="flex-1"
+                      >
+                        編集
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => handleDelete(event.id)}
+                        className="flex-1"
+                      >
+                        削除
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </Card>
             ))}
