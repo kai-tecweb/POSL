@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Card, Button } from '@/components'
+import { Card, Button, Input, TagInput } from '@/components'
 import { eventsAPI } from '@/utils/api'
 
 interface Event {
@@ -12,6 +12,7 @@ interface Event {
   title: string
   date: string
   description: string
+  keywords?: string[]
   is_enabled: boolean
   created_at: string
   updated_at: string
@@ -25,17 +26,123 @@ const EventsPage = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set())
+  const [showForm, setShowForm] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null)
+  const [formData, setFormData] = useState({
+    title: '',
+    date: '',
+    description: '',
+    keywords: [] as string[]
+  })
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
-  // 編集ハンドラ（Phase 3-4-4で本実装）
+  // 編集開始
   const handleEdit = (event: Event) => {
-    console.log('Edit event:', event)
-    // TODO: Phase 3-4-4で実装
+    setFormData({
+      title: event.title,
+      date: event.date,
+      description: event.description || '',
+      keywords: event.keywords || []
+    })
+    setEditingEvent(event)
+    setShowForm(true)
+    setFormErrors({})
   }
 
   // 削除ハンドラ（Phase 3-4-5で本実装）
   const handleDelete = (eventId: number) => {
     console.log('Delete event:', eventId)
     // TODO: Phase 3-4-5で本実装
+  }
+
+  // フォームバリデーション
+  const validateForm = () => {
+    const errors: Record<string, string> = {}
+    
+    if (!formData.title.trim()) {
+      errors.title = 'イベント名は必須です'
+    }
+    
+    if (!formData.date.trim()) {
+      errors.date = '日付は必須です'
+    }
+    
+    if (formData.keywords.length !== 3) {
+      errors.keywords = 'キーワードは3個必要です'
+    }
+    
+    // 重複チェック
+    const uniqueKeywords = new Set(formData.keywords)
+    if (uniqueKeywords.size !== formData.keywords.length) {
+      errors.keywords = 'キーワードに重複があります'
+    }
+    
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  // フォームリセット
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      date: '',
+      description: '',
+      keywords: []
+    })
+    setFormErrors({})
+    setEditingEvent(null)
+    setShowForm(false)
+  }
+
+  // 新規作成開始
+  const handleNewEvent = () => {
+    resetForm()
+    setShowForm(true)
+  }
+
+  // 送信処理
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!validateForm()) {
+      return
+    }
+    
+    try {
+      setSubmitting(true)
+      setError(null)
+      
+      const eventData = {
+        user_id: 'demo',
+        title: formData.title.trim(),
+        date: formData.date,
+        description: formData.description.trim() || undefined,
+        keywords: formData.keywords,
+        is_enabled: true
+      }
+      
+      let response
+      if (editingEvent) {
+        // 更新
+        response = await eventsAPI.updatePersonalEvent(editingEvent.id, eventData, 'demo')
+      } else {
+        // 新規作成
+        response = await eventsAPI.createPersonalEvent(eventData)
+      }
+      
+      if (response.success) {
+        resetForm()
+        await fetchEvents('personal')
+      } else {
+        throw new Error(response.error || 'イベントの保存に失敗しました')
+      }
+    } catch (err: any) {
+      console.error('Failed to save event:', err)
+      setError(err.message || 'イベントの保存に失敗しました')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   // イベント一覧を取得
@@ -156,6 +263,15 @@ const EventsPage = () => {
           </div>
         )}
 
+        {/* 新規作成ボタン（personalタブのみ） */}
+        {activeTab === 'personal' && !showForm && (
+          <div className="mb-6 flex justify-end">
+            <Button onClick={handleNewEvent}>
+              新規イベント登録
+            </Button>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="mb-6 border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
@@ -197,6 +313,74 @@ const EventsPage = () => {
             </button>
           </nav>
         </div>
+
+        {/* Form */}
+        {showForm && activeTab === 'personal' && (
+          <Card title={editingEvent ? 'イベント編集' : '新規イベント登録'} className="mb-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <Input
+                  label="イベント名 *"
+                  value={formData.title}
+                  onChange={(value) => setFormData(prev => ({ ...prev, title: value }))}
+                  error={formErrors.title}
+                  required
+                />
+              </div>
+
+              <div>
+                <Input
+                  label="日付 *"
+                  type="date"
+                  value={formData.date}
+                  onChange={(value) => setFormData(prev => ({ ...prev, date: value }))}
+                  error={formErrors.date}
+                  required
+                />
+              </div>
+
+              <div>
+                <TagInput
+                  label="キーワード *"
+                  tags={formData.keywords}
+                  onChange={(tags) => setFormData(prev => ({ ...prev, keywords: tags }))}
+                  error={formErrors.keywords}
+                  maxTags={3}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  説明
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={resetForm}
+                  disabled={submitting}
+                >
+                  キャンセル
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? '保存中...' : editingEvent ? '更新' : '登録'}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
 
         {/* Events List */}
         {loading ? (
