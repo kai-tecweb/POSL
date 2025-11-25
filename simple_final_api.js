@@ -872,6 +872,56 @@ async function getRecentDiaries(connection, userId, limit = 3) {
   } catch (error) {
     console.error("日記取得エラー:", error);
     return [];
+
+/**
+ * 1年前の今日±3日の日記を取得
+ */
+async function getOneYearAgoDiary(connection, userId) {
+  try {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    
+    // ±3日の範囲でフォーマット
+    const startDate = new Date(oneYearAgo);
+    startDate.setDate(startDate.getDate() - 3);
+    const endDate = new Date(oneYearAgo);
+    endDate.setDate(endDate.getDate() + 3);
+    
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    
+    const [rows] = await connection.execute(
+      `SELECT diary_data, content 
+       FROM diaries 
+       WHERE user_id = ? 
+       AND DATE(created_at_ts) BETWEEN ? AND ?
+       ORDER BY created_at_ts DESC 
+       LIMIT 1`,
+      [userId, startDateStr, endDateStr]
+    );
+    
+    if (rows.length > 0) {
+      const row = rows[0];
+      let diaryData = {};
+      
+      if (row.diary_data) {
+        diaryData = typeof row.diary_data === 'string' 
+          ? JSON.parse(row.diary_data) 
+          : row.diary_data;
+      }
+      
+      return {
+        content: row.content || diaryData.content || '',
+        data: diaryData
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("1年前の日記取得エラー:", error);
+    return null;
+  }
+}
   }
 }
 
@@ -1176,6 +1226,30 @@ async function generatePromptWithSettings(connection, userId) {
     } else {
       systemPrompt += `\n- 中立的な表現を心がけてください。`;
     }
+
+    // humorous（ユーモア）の反映
+    if (toneSettings.humorous !== undefined) {
+      const humorous = toneSettings.humorous / 100;
+      if (humorous >= 0.7) {
+        systemPrompt += `\n- 軽いユーモアやジョークを適度に織り込んでください。ただし、品を保ってください。`;
+      } else if (humorous >= 0.4) {
+        systemPrompt += `\n- 時折、軽いユーモアを入れることができます。`;
+      } else {
+        systemPrompt += `\n- ユーモアは控えめにしてください。`;
+      }
+    }
+    
+    // intellectual（知的さ）の反映
+    if (toneSettings.intellectual !== undefined) {
+      const intellectual = toneSettings.intellectual / 100;
+      if (intellectual >= 0.7) {
+        systemPrompt += `\n- 知的で深みのある表現を心がけてください。専門的な内容にも触れても構いません。`;
+      } else if (intellectual >= 0.4) {
+        systemPrompt += `\n- 適度に知的な表現を入れてください。`;
+      } else {
+        systemPrompt += `\n- 平易でわかりやすい表現を優先してください。`;
+      }
+    }
   }
   
   systemPrompt += `\n- 一人称は「私」を使ってください。
@@ -1235,6 +1309,17 @@ async function generatePromptWithSettings(connection, userId) {
   }
 
   // 商品情報を反映（毎日、水曜日は特に強調）
+  // 1年前の今日の日記を取得
+  const oneYearAgoDiary = await getOneYearAgoDiary(connection, userId);
+  if (oneYearAgoDiary && oneYearAgoDiary.content) {
+    userPrompt += `# 1年前の今日の記録
+`;
+    const summary = oneYearAgoDiary.content.length > 100
+      ? oneYearAgoDiary.content.substring(0, 100) + '...'
+      : oneYearAgoDiary.content;
+    userPrompt += `${summary}\n\n`;
+  }
+
   if (product) {
     if (dayOfWeek === 3) {
       // 水曜日: 商品紹介デー（宣伝色を強く）
