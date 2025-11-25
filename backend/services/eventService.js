@@ -224,7 +224,7 @@ async function getEvent(eventId, userId) {
 async function createPersonalEvent(eventData) {
   let connection;
   try {
-    const { user_id, title, date, description, is_enabled } = eventData;
+    const { user_id, title, date, description, is_enabled, keywords } = eventData;
     
     // バリデーション
     if (!user_id || user_id.trim() === '') {
@@ -237,12 +237,34 @@ async function createPersonalEvent(eventData) {
       throw new Error('日付は必須です');
     }
     
+    // keywordsバリデーション（3個必須）
+    if (!keywords || !Array.isArray(keywords)) {
+      throw new Error('キーワードは配列形式で3個必須です');
+    }
+    if (keywords.length !== 3) {
+      throw new Error('キーワードは3個必要です');
+    }
+    for (let i = 0; i < keywords.length; i++) {
+      if (typeof keywords[i] !== 'string' || keywords[i].trim() === '') {
+        throw new Error(`キーワード${i + 1}は空でない文字列である必要があります`);
+      }
+    }
+    
     connection = await getConnection();
     
     const [result] = await connection.execute(
-      `INSERT INTO events (user_id, event_type, title, date, description, is_enabled)
-       VALUES (?, 'personal', ?, ?, ?, ?)`,
-      [user_id, title, date, description || null, is_enabled !== undefined ? is_enabled : true]
+      `INSERT INTO events (user_id, event_type, title, date, description, is_enabled, keywords)
+       VALUES (?, 'personal', ?, ?, ?, ?, JSON_ARRAY(?, ?, ?))`,
+      [
+        user_id, 
+        title, 
+        date, 
+        description || null, 
+        is_enabled !== undefined ? is_enabled : true,
+        keywords[0],
+        keywords[1],
+        keywords[2]
+      ]
     );
     
     const [rows] = await connection.execute(
@@ -286,6 +308,21 @@ async function updatePersonalEvent(eventId, eventData, userId) {
       throw new Error('イベント名は必須です');
     }
     
+    // keywordsバリデーション（更新時、指定された場合のみ3個必須）
+    if (eventData.keywords !== undefined) {
+      if (!Array.isArray(eventData.keywords)) {
+        throw new Error('キーワードは配列形式で3個必須です');
+      }
+      if (eventData.keywords.length !== 3) {
+        throw new Error('キーワードは3個必要です');
+      }
+      for (let i = 0; i < eventData.keywords.length; i++) {
+        if (typeof eventData.keywords[i] !== 'string' || eventData.keywords[i].trim() === '') {
+          throw new Error(`キーワード${i + 1}は空でない文字列である必要があります`);
+        }
+      }
+    }
+    
     // 更新
     const updates = [];
     const values = [];
@@ -305,6 +342,10 @@ async function updatePersonalEvent(eventId, eventData, userId) {
     if (eventData.is_enabled !== undefined) {
       updates.push('is_enabled = ?');
       values.push(eventData.is_enabled);
+    }
+    if (eventData.keywords !== undefined) {
+      updates.push('keywords = JSON_ARRAY(?, ?, ?)');
+      values.push(eventData.keywords[0], eventData.keywords[1], eventData.keywords[2]);
     }
     
     if (updates.length === 0) {
