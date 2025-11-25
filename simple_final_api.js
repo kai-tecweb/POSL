@@ -97,7 +97,10 @@ async function executeAutoPost() {
       promptEngine: true
     };
     
-    await savePostLog(userId, postData);
+    const postType = product ? 'product' : 'normal';
+    const productId = product ? product.id : null;
+    
+    await savePostLog(userId, postData, postType, null, productId);
     
     console.log(`✅ 自動投稿完了: ${tweetUrl || '投稿失敗'}`);
     
