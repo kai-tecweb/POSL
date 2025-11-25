@@ -19,6 +19,12 @@ const eventRoutes = require("./backend/routes/eventRoutes");
 app.use("/api/events", eventRoutes);
 
 // ============================================================
+// V1.1 Phase 2: 商品APIルート
+// ============================================================
+const productRoutes = require("./backend/routes/productRoutes");
+app.use("/api/products", productRoutes);
+
+// ============================================================
 // V1.1 Phase 1: イベント投稿サービス
 // ============================================================
 const { generateEventPost, postEventToX } = require("./backend/services/eventPostService");
