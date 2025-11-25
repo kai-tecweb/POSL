@@ -228,12 +228,32 @@ async function initializeSchedule() {
         // 複数スケジュール対応（schedules配列がある場合）
         if (settingData.schedules && Array.isArray(settingData.schedules) && settingData.schedules.length > 0) {
           console.log(`📅 データベースから複数スケジュールを読み取り: ${settingData.schedules.length} 件`);
-          setupSchedules(settingData.schedules);
+          
+          // 時刻調整: 8:00-8:29設定時は8:30にずらす
+          const adjustedSchedules = settingData.schedules.map(schedule => {
+            const { hour, minute } = schedule;
+            if (hour === 8 && minute >= 0 && minute < 30) {
+              console.log(`⏰ 時刻調整: JST ${hour}:${String(minute).padStart(2, "0")} → JST 8:30（イベント投稿と重複回避）`);
+              return { hour: 8, minute: 30 };
+            }
+            return schedule;
+          });
+          
+          setupSchedules(adjustedSchedules);
         }
         // 単一スケジュール対応（後方互換性）
         else if (settingData.hour !== undefined && settingData.minute !== undefined) {
-          console.log(`📅 データベースから設定を読み取り: JST ${settingData.hour}:${String(settingData.minute).padStart(2, "0")}`);
-          setupSchedule(settingData.hour, settingData.minute);
+          let { hour, minute } = settingData;
+          
+          // 時刻調整: 8:00-8:29設定時は8:30にずらす
+          if (hour === 8 && minute >= 0 && minute < 30) {
+            console.log(`⏰ 時刻調整: JST ${hour}:${String(minute).padStart(2, "0")} → JST 8:30（イベント投稿と重複回避）`);
+            hour = 8;
+            minute = 30;
+          }
+          
+          console.log(`📅 データベースから設定を読み取り: JST ${hour}:${String(minute).padStart(2, "0")}`);
+          setupSchedule(hour, minute);
         } else {
           console.log(`⚠ 投稿時刻設定が無効または無効化されています`);
         }
