@@ -11,6 +11,7 @@ const navigation = [
   { name: '投稿設定', href: '/settings/post', icon: 'settings' },
   { name: '曜日テーマ', href: '/settings/week-theme', icon: 'calendar' },
   { name: 'イベント', href: '/settings/events', icon: 'event' },
+  { name: '商品管理', href: '/settings/products', icon: 'product' },
   { name: 'トレンド', href: '/settings/trends', icon: 'trending' },
   { name: '文体・トーン', href: '/settings/tone', icon: 'tone' },
   { name: 'テンプレート', href: '/settings/template', icon: 'template' },
@@ -40,6 +41,12 @@ const IconComponent = ({ name }: { name: string }) => {
       return (
         <svg className={iconClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      )
+    case 'product':
+      return (
+        <svg className={iconClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
         </svg>
       )
     case 'mic':
