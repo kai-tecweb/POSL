@@ -764,7 +764,7 @@ const getTwitterClient = () => {
 };
 
 // 投稿ログをpost_logsテーブルに保存
-async function savePostLog(userId, postData) {
+async function savePostLog(userId, postData, postType = 'normal', eventId = null, productId = null) {
   let connection;
   try {
     connection = await mysql.createConnection({
@@ -779,11 +779,11 @@ async function savePostLog(userId, postData) {
     const timestamp = new Date().toISOString();
     
     await connection.execute(
-      'INSERT INTO post_logs (user_id, post_id, timestamp, post_data, created_at) VALUES (?, ?, ?, ?, NOW())',
-      [userId, postId, timestamp, JSON.stringify(postData)]
+      'INSERT INTO post_logs (user_id, post_id, post_type, event_id, product_id, timestamp, post_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+      [userId, postId, postType, eventId, productId, timestamp, JSON.stringify(postData)]
     );
     
-    console.log(`✅ 投稿ログ保存成功: postId=${postId}, userId=${userId}`);
+    console.log(`✅ 投稿ログ保存成功: postId=${postId}, userId=${userId}, postType=${postType}, productId=${productId || 'null'}`);
     return postId;
   } catch (error) {
     console.error(`❌ 投稿ログ保存エラー: userId=${userId}`, error);
@@ -1087,6 +1087,23 @@ async function generatePromptWithSettings(connection, userId) {
   // 今日の曜日テーマ
   const todayTheme = getTodayWeekTheme(weekThemeSettings);
 
+  // 商品情報を取得（毎日）
+  let product = null;
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=日曜日, 1=月曜日, ...
+  
+  try {
+    const [productRows] = await connection.execute(
+      "SELECT * FROM products WHERE user_id = ? AND is_active = 1 ORDER BY priority DESC LIMIT 1",
+      [userId]
+    );
+    if (productRows.length > 0) {
+      product = productRows[0];
+    }
+  } catch (error) {
+    console.warn("商品取得エラー:", error);
+  }
+
   // システムプロンプト構築（プロンプト設計書11-2に準拠）
   let systemPrompt = `あなたは、ユーザー本人の「分身」としてX（旧Twitter）に投稿する日本語文章を作るAIです。
 
@@ -1207,6 +1224,42 @@ async function generatePromptWithSettings(connection, userId) {
 ただし、上記の最近の投稿とは異なる視点や表現で、このテーマに沿った投稿を作成してください。
 
 `;
+  }
+
+  // 商品情報を反映（毎日、月曜日は特に強調）
+  if (product) {
+    if (dayOfWeek === 1) {
+      // 月曜日: 宣伝色を強く
+      userPrompt += `
+# 商品宣伝デー（月曜日）
+今日は「${product.name}」について投稿してください。
+
+【商品情報】
+- 商品名: ${product.name}
+- 説明: ${product.short_description}
+${product.description ? `- 詳細: ${product.description}\n` : ''}${product.url ? `- URL: ${product.url}\n` : ''}
+【指示】
+- この商品を前面に出して、魅力を伝えてください
+- 具体的な使い方やメリットを提案してください
+- ただし、読者が前向きになれる内容にしてください
+
+`;
+    } else {
+      // 平日: 控えめに織り込む
+      userPrompt += `
+# 商品情報（参考）
+投稿の中で、以下の商品に自然に言及してください。
+
+- 商品名: ${product.name}
+- 説明: ${product.short_description}
+${product.url ? `- URL: ${product.url}\n` : ''}
+【注意】
+- 売り込み感を強く出しすぎないでください
+- さりげなく触れる程度で構いません
+- 曜日テーマとの自然な組み合わせを優先してください
+
+`;
+    }
   }
 
   // 人格プロファイルを反映
@@ -1396,7 +1449,7 @@ ${templateDesc}
 - 前後に説明文やラベルはつけず、日本語の文章1本のみを出力してください。
 - **重要**: 以前の投稿とは完全に異なる内容・視点・表現で投稿を作成してください。`;
 
-  return { systemPrompt, userPrompt };
+  return { systemPrompt, userPrompt, product };
 }
 
 // POST /dev/post/ai-with-x - AI生成+X投稿（メイン）
