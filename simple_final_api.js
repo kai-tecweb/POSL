@@ -427,6 +427,35 @@ app.get("/api/trends", async (req, res) => {
   }
 });
 
+// 最新トレンド取得エンドポイント（フロントエンド用）
+app.get("/api/trend/latest", async (req, res) => {
+  try {
+    const connection = await getConnection();
+    const [rows] = await connection.execute(
+      "SELECT * FROM trends ORDER BY fetched_at DESC LIMIT 10"
+    );
+    await connection.end();
+    
+    // フロントエンドが期待する形式に変換
+    res.json({
+      success: true,
+      data: {
+        trends: rows.map(trend => ({
+          keyword: trend.trend_name,
+          source: "google",
+          category: trend.category
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("❌ 最新トレンド取得エラー:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ログ取得API
 app.get("/api/logs", async (req, res) => {
   try {
