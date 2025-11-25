@@ -217,6 +217,27 @@ export const personaAPI = {
   }
 }
 
+// API utility functions for events
+export const eventsAPI = {
+  async getEvents(type: 'fixed' | 'today') {
+    console.log('Getting events', { type })
+    return await apiRequest(`/api/events?type=${type}`)
+  },
+
+  async getTodayEvents(date?: string) {
+    console.log('Getting today events', { date })
+    const url = date ? `/api/events/today?date=${date}` : '/api/events/today'
+    return await apiRequest(url)
+  },
+
+  async toggleEvent(eventId: number) {
+    console.log('Toggling event', { eventId })
+    return await apiRequest(`/api/events/${eventId}/toggle`, {
+      method: 'PUT'
+    })
+  }
+}
+
 // 型定義
 export interface Post {
   id: number

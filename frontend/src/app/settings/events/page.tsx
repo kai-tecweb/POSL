@@ -1,393 +1,259 @@
 'use client'
 
-import { useState } from 'react'
-import { useAppStore } from '@/store/appStore'
-import { Card, Button, Input } from '@/components'
+import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
-import type { EventSettings } from '@/types'
+import { Card } from '@/components'
+import { eventsAPI } from '@/utils/api'
 
-const EventManagement = () => {
-  const { events, addEvent, updateEvent, removeEvent } = useAppStore()
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [formData, setFormData] = useState<Partial<EventSettings>>({
-    title: '',
-    date: '',
-    description: '',
-    enabled: true,
-    behavior: 'add'
-  })
+interface Event {
+  id: number
+  user_id: string
+  event_type: 'fixed' | 'today' | 'personal'
+  title: string
+  date: string
+  description: string
+  is_enabled: boolean
+  created_at: string
+  updated_at: string
+}
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.title || !formData.date) return
+const EventsPage = () => {
+  const [activeTab, setActiveTab] = useState<'fixed' | 'today'>('fixed')
+  const [fixedEvents, setFixedEvents] = useState<Event[]>([])
+  const [todayEvents, setTodayEvents] = useState<Event[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set())
 
-    if (editingId) {
-      // Update existing event
-      updateEvent(editingId, formData)
-      setEditingId(null)
-    } else {
-      // Add new event
-      const newEvent: EventSettings = {
-        id: Date.now().toString(),
-        title: formData.title,
-        date: formData.date,
-        description: formData.description || '',
-        enabled: formData.enabled || true,
-        behavior: formData.behavior || 'add'
+  // イベント一覧を取得
+  const fetchEvents = async (type: 'fixed' | 'today') => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await eventsAPI.getEvents(type)
+      
+      if (response.success && response.data) {
+        // 日付順にソート
+        const sortedEvents = response.data.sort((a: Event, b: Event) => {
+          const dateA = new Date(a.date).getTime()
+          const dateB = new Date(b.date).getTime()
+          return dateA - dateB
+        })
+        
+        if (type === 'fixed') {
+          setFixedEvents(sortedEvents)
+        } else {
+          setTodayEvents(sortedEvents)
+        }
+      } else {
+        throw new Error(response.error || 'イベントの取得に失敗しました')
       }
-      addEvent(newEvent)
+    } catch (err: any) {
+      console.error('Failed to fetch events:', err)
+      setError(err.message || 'イベントの取得に失敗しました')
+    } finally {
+      setLoading(false)
     }
-
-    // Reset form
-    setFormData({
-      title: '',
-      date: '',
-      description: '',
-      enabled: true,
-      behavior: 'add'
-    })
-    setShowAddForm(false)
   }
 
-  const handleEdit = (event: EventSettings) => {
-    setFormData(event)
-    setEditingId(event.id)
-    setShowAddForm(true)
+  // 初期ロード
+  useEffect(() => {
+    fetchEvents('fixed')
+    fetchEvents('today')
+  }, [])
+
+  // タブ切り替え時に再取得（必要に応じて）
+  useEffect(() => {
+    if (activeTab === 'fixed' && fixedEvents.length === 0 && !loading) {
+      fetchEvents('fixed')
+    } else if (activeTab === 'today' && todayEvents.length === 0 && !loading) {
+      fetchEvents('today')
+    }
+  }, [activeTab])
+
+  // イベントのON/OFF切り替え
+  const handleToggle = async (eventId: number) => {
+    try {
+      setTogglingIds(prev => new Set(prev).add(eventId))
+      setError(null)
+      
+      const response = await eventsAPI.toggleEvent(eventId)
+      
+      if (response.success && response.data) {
+        // 該当イベントを更新
+        const updateEvent = (events: Event[]) => 
+          events.map(e => e.id === eventId ? response.data : e)
+        
+        if (activeTab === 'fixed') {
+          setFixedEvents(updateEvent(fixedEvents))
+        } else {
+          setTodayEvents(updateEvent(todayEvents))
+        }
+      } else {
+        throw new Error(response.error || 'イベントの切り替えに失敗しました')
+      }
+    } catch (err: any) {
+      console.error('Failed to toggle event:', err)
+      setError(err.message || 'イベントの切り替えに失敗しました')
+    } finally {
+      setTogglingIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(eventId)
+        return newSet
+      })
+    }
   }
 
-  const handleCancel = () => {
-    setFormData({
-      title: '',
-      date: '',
-      description: '',
-      enabled: true,
-      behavior: 'add'
-    })
-    setEditingId(null)
-    setShowAddForm(false)
+  // 日付をフォーマット（MM-DD形式）
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${month}/${day}`
   }
 
-  const sortedEvents = [...events].sort((a, b) => 
-    new Date(a.date).getTime() - new Date(b.date).getTime()
-  )
-
-  const upcomingEvents = sortedEvents.filter(event => 
-    new Date(event.date) >= new Date()
-  )
-  
-  const pastEvents = sortedEvents.filter(event => 
-    new Date(event.date) < new Date()
-  )
-
-  const getEventStatus = (date: string) => {
-    const eventDate = new Date(date)
-    const today = new Date()
-    const diffTime = eventDate.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-    if (diffDays < 0) return { text: '終了', color: 'gray' }
-    if (diffDays === 0) return { text: '今日', color: 'red' }
-    if (diffDays === 1) return { text: '明日', color: 'orange' }
-    if (diffDays <= 7) return { text: `${diffDays}日後`, color: 'yellow' }
-    return { text: `${diffDays}日後`, color: 'blue' }
-  }
+  // 現在のイベントリスト
+  const currentEvents = activeTab === 'fixed' ? fixedEvents : todayEvents
+  const eventTypeLabel = activeTab === 'fixed' ? '鉄板イベント' : '今日は何の日'
 
   return (
     <Layout>
       <div className="max-w-6xl mx-auto">
         {/* Page Header */}
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">イベント管理</h1>
-            <p className="mt-2 text-gray-600">
-              特別な日やイベントを登録して、投稿内容に反映させることができます
-            </p>
-          </div>
-          <Button
-            onClick={() => setShowAddForm(true)}
-            disabled={showAddForm}
-          >
-            新しいイベントを追加
-          </Button>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">イベント管理</h1>
+          <p className="mt-2 text-gray-600">
+            特別なイベントや記念日のON/OFFを管理します
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Add/Edit Form */}
-          {showAddForm && (
-            <Card title={editingId ? 'イベントを編集' : '新しいイベントを追加'}>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <Input
-                  label="イベント名"
-                  value={formData.title || ''}
-                  onChange={(value) => setFormData(prev => ({ ...prev, title: value }))}
-                  placeholder="例: クリスマス、誕生日、新年"
-                  required
-                />
+        {/* Error Display */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
+            <div className="text-red-700">{error}</div>
+          </div>
+        )}
 
-                <Input
-                  label="日付"
-                  type="date"
-                  value={formData.date || ''}
-                  onChange={(value) => setFormData(prev => ({ ...prev, date: value }))}
-                  required
-                />
+        {/* Tabs */}
+        <div className="mb-6 border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('fixed')}
+              className={`
+                py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'fixed'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              鉄板イベント ({fixedEvents.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('today')}
+              className={`
+                py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'today'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              今日は何の日 ({todayEvents.length})
+            </button>
+          </nav>
+        </div>
 
-                <Input
-                  label="説明（任意）"
-                  value={formData.description || ''}
-                  onChange={(value) => setFormData(prev => ({ ...prev, description: value }))}
-                  placeholder="イベントの詳細や投稿での取り扱い方を記載"
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    投稿への反映方法
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="behavior"
-                        value="add"
-                        checked={formData.behavior === 'add'}
-                        onChange={(e) => setFormData(prev => ({ ...prev, behavior: e.target.value as 'add' | 'replace' }))}
-                        className="border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      <span className="ml-2 text-sm">曜日テーマに追加</span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="behavior"
-                        value="replace"
-                        checked={formData.behavior === 'replace'}
-                        onChange={(e) => setFormData(prev => ({ ...prev, behavior: e.target.value as 'add' | 'replace' }))}
-                        className="border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      <span className="ml-2 text-sm">曜日テーマを置き換え</span>
-                    </label>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    「追加」は通常テーマ + イベント、「置き換え」はイベントのみで投稿
-                  </p>
-                </div>
-
-                <div>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.enabled || false}
-                      onChange={(e) => setFormData(prev => ({ ...prev, enabled: e.target.checked }))}
-                      className="rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                    />
-                    <span className="ml-2 text-sm font-medium text-gray-900">
-                      このイベントを有効にする
-                    </span>
-                  </label>
-                </div>
-
-                <div className="flex space-x-3 pt-4">
-                  <Button type="submit" className="flex-1">
-                    {editingId ? '更新' : '追加'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleCancel}
-                  >
-                    キャンセル
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          )}
-
-          {/* Upcoming Events */}
-          <Card title={`今後のイベント (${upcomingEvents.length}件)`}>
-            {upcomingEvents.length > 0 ? (
-              <div className="space-y-4">
-                {upcomingEvents.map((event) => {
-                  const status = getEventStatus(event.date)
-                  return (
-                    <div key={event.id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex-1">
-                          <div className="flex items-center">
-                            <h3 className="text-lg font-medium text-gray-900">{event.title}</h3>
-                            <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
-                              status.color === 'red' ? 'bg-red-100 text-red-800' :
-                              status.color === 'orange' ? 'bg-orange-100 text-orange-800' :
-                              status.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-blue-100 text-blue-800'
-                            }`}>
-                              {status.text}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {new Date(event.date).toLocaleDateString('ja-JP', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric',
-                              weekday: 'long'
-                            })}
-                          </p>
-                          {event.description && (
-                            <p className="text-sm text-gray-600 mt-2">{event.description}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {!event.enabled && (
-                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                              無効
-                            </span>
-                          )}
-                          <span className={`text-xs px-2 py-1 rounded ${
-                            event.behavior === 'add' 
-                              ? 'bg-green-100 text-green-700' 
-                              : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {event.behavior === 'add' ? '追加' : '置換'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleEdit(event)}
-                        >
-                          編集
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => {
-                            if (confirm('このイベントを削除しますか？')) {
-                              removeEvent(event.id)
-                            }
-                          }}
-                        >
-                          削除
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p className="mt-2">今後のイベントはありません</p>
-                <p className="text-sm">「新しいイベントを追加」から登録してください</p>
-              </div>
-            )}
-          </Card>
-
-          {/* Past Events */}
-          {pastEvents.length > 0 && (
-            <Card title={`過去のイベント (${pastEvents.length}件)`}>
-              <div className="space-y-3 max-h-64 overflow-y-auto">
-                {pastEvents.slice(0, 10).map((event) => (
-                  <div key={event.id} className="bg-gray-50 rounded-lg p-3">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-700">{event.title}</h4>
-                        <p className="text-xs text-gray-500">
-                          {new Date(event.date).toLocaleDateString('ja-JP')}
-                        </p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleEdit(event)}
-                        >
-                          再利用
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => removeEvent(event.id)}
-                        >
-                          削除
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {pastEvents.length > 10 && (
-                  <p className="text-center text-sm text-gray-500">
-                    他 {pastEvents.length - 10} 件...
-                  </p>
-                )}
-              </div>
-            </Card>
-          )}
-
-          {/* Usage Guide */}
-          <Card title="イベント機能の使い方">
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 mb-2">イベントとは？</h4>
-                <p className="text-sm text-gray-600">
-                  特別な日やイベントを事前に登録しておくことで、その日の投稿内容に自動的に反映させることができます。
-                </p>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 mb-2">反映方法の違い</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-start">
-                    <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs mr-3 mt-0.5">追加</span>
-                    <div>
-                      <div className="font-medium">曜日テーマに追加</div>
-                      <div className="text-gray-600">通常の曜日テーマ + イベント情報で投稿</div>
-                    </div>
-                  </div>
-                  <div className="flex items-start">
-                    <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs mr-3 mt-0.5">置換</span>
-                    <div>
-                      <div className="font-medium">曜日テーマを置き換え</div>
-                      <div className="text-gray-600">イベント情報のみで投稿（曜日テーマ無視）</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 mb-2">活用例</h4>
-                <ul className="text-sm text-gray-600 space-y-1 pl-4">
-                  <li>• 誕生日、記念日</li>
-                  <li>• 季節イベント（クリスマス、正月等）</li>
-                  <li>• 製品発表、重要な発表</li>
-                  <li>• 個人的なマイルストーン</li>
-                </ul>
-              </div>
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <div className="flex">
-                  <div className="text-yellow-400 mr-3">
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="text-sm">
-                    <div className="font-medium text-yellow-800">ヒント</div>
-                    <div className="text-yellow-700">
-                      イベントは投稿日の数日前から準備として言及することも可能です
-                    </div>
-                  </div>
-                </div>
-              </div>
+        {/* Events List */}
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            <p className="mt-4 text-gray-600">読み込み中...</p>
+          </div>
+        ) : currentEvents.length === 0 ? (
+          <Card>
+            <div className="text-center py-12">
+              <p className="text-gray-500">イベントが見つかりません</p>
             </div>
           </Card>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {currentEvents.map((event) => (
+              <Card key={event.id}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                      {event.title}
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-2">
+                      {formatDate(event.date)}
+                    </p>
+                  </div>
+                  <div className="ml-4">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={event.is_enabled}
+                        onChange={() => handleToggle(event.id)}
+                        disabled={togglingIds.has(event.id)}
+                        className="sr-only peer"
+                      />
+                      <div className={`
+                        w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer
+                        peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all
+                        ${event.is_enabled ? 'peer-checked:bg-primary-600' : ''}
+                        ${togglingIds.has(event.id) ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}></div>
+                    </label>
+                  </div>
+                </div>
+                {event.description && (
+                  <p className="text-sm text-gray-600 line-clamp-2">
+                    {event.description}
+                  </p>
+                )}
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span className={`
+                      px-2 py-1 rounded-full
+                      ${event.is_enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}
+                    `}>
+                      {event.is_enabled ? '有効' : '無効'}
+                    </span>
+                    {togglingIds.has(event.id) && (
+                      <span className="text-primary-600">更新中...</span>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Info Card */}
+        <Card className="mt-6">
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">イベント管理について</h3>
+            <div className="text-sm text-gray-600 space-y-2">
+              <p>
+                <strong>鉄板イベント:</strong> 元日、バレンタインデー、クリスマスなど、毎年同じ日に発生する固定イベントです。
+              </p>
+              <p>
+                <strong>今日は何の日:</strong> 猫の日、ポッキーの日など、一般的な記念日です。
+              </p>
+              <p>
+                <strong>ON/OFF切り替え:</strong> スイッチを切り替えることで、そのイベントの投稿を有効/無効にできます。
+                無効にしたイベントは自動投稿されません。
+              </p>
+              <p className="text-xs text-gray-500 mt-4">
+                注意: イベントの作成・編集・削除はできません。システムで管理されているイベントのみ表示されます。
+              </p>
+            </div>
+          </div>
+        </Card>
       </div>
     </Layout>
   )
 }
 
-export default EventManagement
+export default EventsPage
