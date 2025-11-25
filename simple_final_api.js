@@ -34,7 +34,7 @@ const eventService = require("./backend/services/eventService");
 // node-cron スケジューラー管理（根本的な解決策）
 // ============================================
 let scheduledTasks = []; // 複数のスケジュールタスクを管理（1日3回対応）
-let eventScheduledTasks = []; // イベント投稿用のスケジュールタスク（2つ）
+let eventScheduledTasks = []; // イベント投稿用のスケジュールタスク（1つ：朝のイベント投稿）
 
 /**
  * 自動投稿を実行する関数
@@ -2197,82 +2197,232 @@ JSON形式で以下の構造で回答してください：
 /**
  * イベント投稿を実行する関数（鉄板イベント用）
  */
-async function executeFixedEventPost() {
-  try {
-    console.log(`📅 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 鉄板イベント投稿を実行します`);
-    
-    // 今日の日付を取得（MM-DD形式）
-    const today = new Date();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    const todayStr = `2025-${month}-${day}`;
-    
-    // 今日の鉄板イベントを取得
-    const events = await eventService.getEventsByType('fixed');
-    const todayEvents = events.filter(e => {
-      const eventDate = new Date(e.date);
-      return eventDate.getMonth() + 1 === today.getMonth() + 1 && 
-             eventDate.getDate() === today.getDate();
-    });
-    
-    if (todayEvents.length === 0) {
-      console.log(`ℹ️ 今日（${todayStr}）の鉄板イベントはありません`);
-      return;
-    }
-    
-    // 最初のイベントを投稿（複数ある場合は最初の1件のみ）
-    const event = todayEvents[0];
-    console.log(`📌 イベント投稿: ${event.title} (id=${event.id})`);
-    
-    // 投稿文生成
-    const text = await generateEventPost(event);
-    
-    // X APIに投稿
-    await postEventToX(event, text);
-    
-    console.log(`✅ 鉄板イベント投稿完了: ${event.title}`);
-  } catch (error) {
-    console.error(`❌ 鉄板イベント投稿エラー: ${error.message}`);
-    console.error(error.stack);
-  }
-}
-
 /**
- * イベント投稿を実行する関数（今日は何の日用）
+ * 朝のイベント投稿を実行する関数（優先順位対応版）
+ * 優先順位: 1.鉄板 2.今日は何の日 3.独自イベント 4.通常投稿（8:00設定時）
  */
-async function executeTodayEventPost() {
+async function executeMorningEvents() {
   try {
-    console.log(`📅 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 今日は何の日投稿を実行します`);
+    console.log(`📅 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 朝のイベント投稿を開始します`);
     
     // 今日の日付を取得
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
     
-    // 今日のイベントを取得
-    const events = await eventService.getTodayEvents(todayStr);
+    // イベントキューを作成
+    const eventQueue = [];
     
-    if (events.length === 0) {
-      console.log(`ℹ️ 今日（${todayStr}）の「今日は何の日」イベントはありません`);
+    // 1. 鉄板イベントを取得
+    try {
+      const fixedEvents = await eventService.getEventsByType('fixed');
+      const todayFixedEvents = fixedEvents.filter(e => {
+        const eventDate = new Date(e.date);
+        return eventDate.getMonth() + 1 === today.getMonth() + 1 && 
+               eventDate.getDate() === today.getDate() &&
+               e.is_enabled === true;
+      });
+      
+      if (todayFixedEvents.length > 0) {
+        eventQueue.push({
+          type: 'fixed',
+          event: todayFixedEvents[0],
+          priority: 1
+        });
+        console.log(`✓ 鉄板イベント: ${todayFixedEvents[0].title}`);
+      }
+    } catch (error) {
+      console.error(`❌ 鉄板イベント取得エラー: ${error.message}`);
+    }
+    
+    // 2. 今日は何の日を取得
+    try {
+      const todayEvents = await eventService.getTodayEvents(todayStr);
+      const enabledTodayEvents = todayEvents.filter(e => e.is_enabled === true);
+      
+      if (enabledTodayEvents.length > 0) {
+        eventQueue.push({
+          type: 'today',
+          event: enabledTodayEvents[0],
+          priority: 2
+        });
+        console.log(`✓ 今日は何の日: ${enabledTodayEvents[0].title}`);
+      }
+    } catch (error) {
+      console.error(`❌ 今日は何の日取得エラー: ${error.message}`);
+    }
+    
+    // 3. 独自イベントを取得
+    try {
+      const personalEvents = await eventService.getEventsByType('personal', 'demo');
+      const todayPersonalEvents = personalEvents.filter(e => {
+        const eventDate = new Date(e.date).toISOString().split('T')[0];
+        return eventDate === todayStr && e.is_enabled === true;
+      });
+      
+      if (todayPersonalEvents.length > 0) {
+        eventQueue.push({
+          type: 'personal',
+          event: todayPersonalEvents[0],
+          priority: 3
+        });
+        console.log(`✓ 独自イベント: ${todayPersonalEvents[0].title}`);
+      }
+    } catch (error) {
+      console.error(`❌ 独自イベント取得エラー: ${error.message}`);
+    }
+    
+    // 4. 通常投稿（8:00設定）があれば追加
+    try {
+      const connection = await getConnection();
+      const [rows] = await connection.execute(
+        "SELECT setting_data FROM settings WHERE user_id = ? AND setting_type = ?",
+        ["demo", "post-time"]
+      );
+      await connection.end();
+      
+      if (rows.length > 0) {
+        const settingData = typeof rows[0].setting_data === 'string' 
+          ? JSON.parse(rows[0].setting_data) 
+          : rows[0].setting_data;
+        
+        if (settingData.enabled) {
+          // 8:00に設定されている通常投稿があるか確認
+          let has8amSchedule = false;
+          
+          if (settingData.schedules && Array.isArray(settingData.schedules)) {
+            has8amSchedule = settingData.schedules.some(s => s.hour === 8 && s.minute === 0);
+          } else if (settingData.hour === 8 && settingData.minute === 0) {
+            has8amSchedule = true;
+          }
+          
+          if (has8amSchedule) {
+            eventQueue.push({
+              type: 'normal',
+              event: null,
+              priority: 4
+            });
+            console.log(`✓ 通常投稿（8:00設定）`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`❌ 通常投稿設定取得エラー: ${error.message}`);
+    }
+    
+    
+    // イベントがない場合
+    if (eventQueue.length === 0) {
+      console.log(`ℹ️ 今日（${todayStr}）の朝のイベントはありません`);
       return;
     }
     
-    // 最初のイベントを投稿（複数ある場合は最初の1件のみ）
-    const event = events[0];
-    console.log(`📌 イベント投稿: ${event.title} (id=${event.id})`);
+    console.log(`📋 投稿スケジュール: ${eventQueue.length}件のイベント`);
     
-    // 投稿文生成
-    const text = await generateEventPost(event);
+    // 5. 優先順位でソート（念のため）
+    eventQueue.sort((a, b) => a.priority - b.priority);
     
-    // X APIに投稿
-    await postEventToX(event, text);
+    // 6. 15分間隔で投稿
+    for (let i = 0; i < eventQueue.length; i++) {
+      const item = eventQueue[i];
+      const delay = i * 15 * 60 * 1000; // 15分 = 900000ms
+      const scheduleTime = new Date(Date.now() + delay);
+      
+      console.log(`⏰ スケジュール${i + 1}: ${item.event ? item.event.title : '通常投稿'} (${item.type}) - ${scheduleTime.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`);
+      
+      setTimeout(async () => {
+        try {
+          let text;
+          
+          if (item.type === 'normal') {
+            // 通常の自動投稿を実行
+            console.log(`📌 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 通常投稿開始 (${item.type})`);
+            
+            const userId = "demo";
+            const connection = await getConnection();
+            
+            // プロンプト生成（設定を反映）
+            const { systemPrompt, userPrompt, product } = await generatePromptWithSettings(connection, userId);
+            
+            // OpenAIで投稿文生成
+            const openai = getOpenAIClient();
+            const completion = await openai.chat.completions.create({
+              model: "gpt-4",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+              ],
+              max_tokens: 200,
+              temperature: 0.95,
+              top_p: 0.9
+            });
+            
+            text = completion.choices[0]?.message?.content?.trim() || "";
+            
+            if (!text || text.length > 280) {
+              throw new Error(`生成された投稿文が無効です (length: ${text.length})`);
+            }
+            
+            // X APIで投稿
+            let tweetId = null;
+            let tweetUrl = null;
+            let xPostError = null;
+            
+            try {
+              const twitter = getTwitterClient();
+              const result = await twitter.v2.tweet(text);
+              tweetId = result.data?.id;
+              tweetUrl = tweetId ? `https://x.com/posl_ai/status/${tweetId}` : null;
+              console.log(`✅ X投稿成功: tweetId=${tweetId}`);
+            } catch (xError) {
+              console.error("❌ X投稿失敗:", xError.message);
+              xPostError = xError.message;
+            }
+            
+            // 投稿ログを保存
+            const postData = {
+              content: text,
+              xPostId: tweetId || "",
+              success: !!tweetId,
+              error: xPostError,
+              timestamp: new Date().toISOString(),
+              aiModel: "gpt-4",
+              promptEngine: true
+            };
+            
+            const postType = product ? 'product' : 'normal';
+            await savePostLog(userId, postData, postType);
+            
+            await connection.end();
+            
+            console.log(`✅ 通常投稿完了`);
+          } else {
+            // イベント投稿
+            console.log(`📌 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] イベント投稿開始: ${item.event.title} (${item.type})`);
+            
+            // 投稿文生成
+            text = await generateEventPost(item.event);
+            
+            // X APIに投稿
+            await postEventToX(item.event, text);
+            
+            console.log(`✅ イベント投稿完了: ${item.event.title} (${item.type})`);
+          }
+        } catch (error) {
+          console.error(`❌ 投稿エラー (${item.type}): ${error.message}`);
+          console.error(error.stack);
+        }
+      }, delay);
+    }
     
-    console.log(`✅ 今日は何の日投稿完了: ${event.title}`);
+    console.log(`✅ 朝のイベント投稿スケジュール設定完了: ${eventQueue.length}件`);
+    
   } catch (error) {
-    console.error(`❌ 今日は何の日投稿エラー: ${error.message}`);
+    console.error(`❌ 朝のイベント投稿エラー: ${error.message}`);
     console.error(error.stack);
   }
 }
-
 app.listen(3001, async () => {
   console.log("🚀 Simple Final API Server on port 3001");
   
@@ -2283,21 +2433,15 @@ app.listen(3001, async () => {
   // イベント投稿スケジュールを設定
   console.log("📅 イベント投稿スケジュールを設定中...");
   
-  // 1. 鉄板イベント用cron（JST 08:00 = UTC 23:00）
-  const fixedEventTask = cron.schedule('0 23 * * *', executeFixedEventPost, {
+  // 朝のイベント投稿用cron（JST 08:00 = UTC 23:00）
+  // 優先順位: 1.鉄板 2.今日は何の日 3.独自イベント
+  const morningEventsTask = cron.schedule('0 23 * * *', executeMorningEvents, {
     scheduled: true,
     timezone: "UTC"
   });
-  eventScheduledTasks.push(fixedEventTask);
-  console.log("✅ 鉄板イベント投稿スケジュール設定完了: 毎日 JST 08:00 (cron: 0 23 * * *)");
-  
-  // 2. 今日は何の日用cron（JST 08:15 = UTC 23:15）
-  const todayEventTask = cron.schedule('15 23 * * *', executeTodayEventPost, {
-    scheduled: true,
-    timezone: "UTC"
-  });
-  eventScheduledTasks.push(todayEventTask);
-  console.log("✅ 今日は何の日投稿スケジュール設定完了: 毎日 JST 08:15 (cron: 15 23 * * *)");
+  eventScheduledTasks.push(morningEventsTask);
+  console.log("✅ 朝のイベント投稿スケジュール設定完了: 毎日 JST 08:00 (cron: 0 23 * * *)");
+  console.log("   優先順位: 1.鉄板 → 2.今日は何の日 → 3.独自イベント");
   
   console.log("✅ サーバー起動完了");
 });

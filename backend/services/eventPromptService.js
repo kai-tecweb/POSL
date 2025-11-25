@@ -15,7 +15,7 @@
  * @returns {Object} { systemPrompt, userPrompt }
  */
 function generateEventPrompt(event, userProfile = null) {
-  const { event_type, title, description } = event;
+  const { event_type, title, description, keywords } = event;
   
   // システムプロンプト（共通）
   const systemPrompt = `あなたは、ユーザー本人の「分身」としてX（旧Twitter）に投稿する日本語文章を作るAIです。
@@ -104,9 +104,14 @@ ${description ? `説明: ${description}\n` : ''}
     
   } else if (event_type === 'personal') {
     // パーソナルイベント用テンプレート
-    userPrompt = `# パーソナルイベント: ${title}
+    // keywordsを文字列に変換
+    const keywordsText = keywords && Array.isArray(keywords) && keywords.length > 0
+      ? `キーワード: ${keywords.join('、')}
+`
+      : '';
 
-${description ? `説明: ${description}\n` : ''}
+    userPrompt = `# パーソナルイベント: ${title}
+${description ? `説明: ${description}\n` : ''}${keywordsText}
 
 以下の条件で投稿文を作成してください：
 
