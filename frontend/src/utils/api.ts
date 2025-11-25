@@ -219,9 +219,12 @@ export const personaAPI = {
 
 // API utility functions for events
 export const eventsAPI = {
-  async getEvents(type: 'fixed' | 'today') {
-    console.log('Getting events', { type })
-    return await apiRequest(`/api/events?type=${type}`)
+  async getEvents(type: 'fixed' | 'today' | 'personal', userId?: string) {
+    console.log('Getting events', { type, userId })
+    const url = type === 'personal' && userId 
+      ? `/api/events?type=${type}&userId=${userId}`
+      : `/api/events?type=${type}`
+    return await apiRequest(url)
   },
 
   async getTodayEvents(date?: string) {
@@ -234,6 +237,59 @@ export const eventsAPI = {
     console.log('Toggling event', { eventId })
     return await apiRequest(`/api/events/${eventId}/toggle`, {
       method: 'PUT'
+    })
+  },
+
+  // 独自イベント一覧取得
+  async getPersonalEvents(userId: string = 'demo') {
+    console.log('Getting personal events', { userId })
+    return await apiRequest(`/api/events?type=personal&userId=${userId}`)
+  },
+
+  // 特定イベント取得
+  async getEvent(eventId: number, userId: string = 'demo') {
+    console.log('Getting event', { eventId, userId })
+    return await apiRequest(`/api/events/${eventId}?userId=${userId}`)
+  },
+
+  // 独自イベント作成
+  async createPersonalEvent(eventData: {
+    user_id: string
+    title: string
+    date: string
+    description?: string
+    is_enabled?: boolean
+  }) {
+    console.log('Creating personal event', eventData)
+    return await apiRequest('/api/events', {
+      method: 'POST',
+      body: JSON.stringify(eventData)
+    })
+  },
+
+  // 独自イベント更新
+  async updatePersonalEvent(
+    eventId: number,
+    eventData: {
+      title?: string
+      date?: string
+      description?: string
+      is_enabled?: boolean
+    },
+    userId: string = 'demo'
+  ) {
+    console.log('Updating personal event', { eventId, eventData, userId })
+    return await apiRequest(`/api/events/${eventId}?userId=${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(eventData)
+    })
+  },
+
+  // 独自イベント削除
+  async deletePersonalEvent(eventId: number, userId: string = 'demo') {
+    console.log('Deleting personal event', { eventId, userId })
+    return await apiRequest(`/api/events/${eventId}?userId=${userId}`, {
+      method: 'DELETE'
     })
   }
 }
