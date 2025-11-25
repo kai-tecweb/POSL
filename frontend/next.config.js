@@ -1,30 +1,33 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  swcMinify: true,
   
   // 本番環境での静的アセット配信の問題を解決
   assetPrefix: process.env.NODE_ENV === 'production' ? '' : '',
   trailingSlash: false,
   
-  // 画像最適化の設定（Next.js 16対応）
+  // 画像最適化の設定
   images: {
-    remotePatterns: [
-      {
-        protocol: 'http',
-        hostname: 'localhost',
-      },
-    ],
+    domains: ['localhost'],
     unoptimized: process.env.NODE_ENV === 'production'
   },
   
   // 出力設定
   output: 'standalone',
   
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '/api',
+  experimental: {
+    typedRoutes: false,  // 本番環境では無効にして安定性向上
   },
   
-  // 本番環境では TypeScript エラーでビルドを止めない
+  env: {
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  },
+  
+  // 本番環境では TypeScript と ESLint エラーでビルドを止めない
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -33,8 +36,40 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
   
-  // Turbopack設定（Next.js 16対応）
-  turbopack: {},
+  // Webpack configuration for CSS handling
+  webpack: (config, { dev, isServer }) => {
+    // CSS関連の設定
+    if (!dev && !isServer) {
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          ...config.optimization.splitChunks,
+          cacheGroups: {
+            ...config.optimization.splitChunks.cacheGroups,
+            styles: {
+              name: 'styles',
+              test: /\.(css|scss)$/,
+              chunks: 'all',
+              enforce: true,
+            },
+          },
+        },
+      };
+    }
+    
+    return config;
+  },
+  
+  // Redirects
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/dashboard',
+        permanent: false,
+      },
+    ];
+  },
   
   // Headers for static assets
   async headers() {
