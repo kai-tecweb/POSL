@@ -18,10 +18,17 @@ app.use(express.json());
 const eventRoutes = require("./backend/routes/eventRoutes");
 app.use("/api/events", eventRoutes);
 
+// ============================================================
+// V1.1 Phase 1: イベント投稿サービス
+// ============================================================
+const { generateEventPost, postEventToX } = require("./backend/services/eventPostService");
+const eventService = require("./backend/services/eventService");
+
 // ============================================
 // node-cron スケジューラー管理（根本的な解決策）
 // ============================================
 let scheduledTasks = []; // 複数のスケジュールタスクを管理（1日3回対応）
+let eventScheduledTasks = []; // イベント投稿用のスケジュールタスク（2つ）
 
 /**
  * 自動投稿を実行する関数
@@ -147,6 +154,15 @@ function stopAllSchedules() {
     }
   });
   scheduledTasks = [];
+  
+  // イベント投稿スケジュールも停止
+  eventScheduledTasks.forEach((task, index) => {
+    if (task) {
+      console.log(`🛑 イベントスケジュール ${index + 1} を停止します`);
+      task.stop();
+    }
+  });
+  eventScheduledTasks = [];
 }
 
 /**
@@ -212,12 +228,32 @@ async function initializeSchedule() {
         // 複数スケジュール対応（schedules配列がある場合）
         if (settingData.schedules && Array.isArray(settingData.schedules) && settingData.schedules.length > 0) {
           console.log(`📅 データベースから複数スケジュールを読み取り: ${settingData.schedules.length} 件`);
-          setupSchedules(settingData.schedules);
+          
+          // 時刻調整: 8:00-8:29設定時は8:30にずらす
+          const adjustedSchedules = settingData.schedules.map(schedule => {
+            const { hour, minute } = schedule;
+            if (hour === 8 && minute >= 0 && minute < 30) {
+              console.log(`⏰ 時刻調整: JST ${hour}:${String(minute).padStart(2, "0")} → JST 8:30（イベント投稿と重複回避）`);
+              return { hour: 8, minute: 30 };
+            }
+            return schedule;
+          });
+          
+          setupSchedules(adjustedSchedules);
         }
         // 単一スケジュール対応（後方互換性）
         else if (settingData.hour !== undefined && settingData.minute !== undefined) {
-          console.log(`📅 データベースから設定を読み取り: JST ${settingData.hour}:${String(settingData.minute).padStart(2, "0")}`);
-          setupSchedule(settingData.hour, settingData.minute);
+          let { hour, minute } = settingData;
+          
+          // 時刻調整: 8:00-8:29設定時は8:30にずらす
+          if (hour === 8 && minute >= 0 && minute < 30) {
+            console.log(`⏰ 時刻調整: JST ${hour}:${String(minute).padStart(2, "0")} → JST 8:30（イベント投稿と重複回避）`);
+            hour = 8;
+            minute = 30;
+          }
+          
+          console.log(`📅 データベースから設定を読み取り: JST ${hour}:${String(minute).padStart(2, "0")}`);
+          setupSchedule(hour, minute);
         } else {
           console.log(`⚠ 投稿時刻設定が無効または無効化されています`);
         }
@@ -2005,11 +2041,110 @@ JSON形式で以下の構造で回答してください：
   }
 }
 
+/**
+ * イベント投稿を実行する関数（鉄板イベント用）
+ */
+async function executeFixedEventPost() {
+  try {
+    console.log(`📅 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 鉄板イベント投稿を実行します`);
+    
+    // 今日の日付を取得（MM-DD形式）
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `2025-${month}-${day}`;
+    
+    // 今日の鉄板イベントを取得
+    const events = await eventService.getEventsByType('fixed');
+    const todayEvents = events.filter(e => {
+      const eventDate = new Date(e.date);
+      return eventDate.getMonth() + 1 === today.getMonth() + 1 && 
+             eventDate.getDate() === today.getDate();
+    });
+    
+    if (todayEvents.length === 0) {
+      console.log(`ℹ️ 今日（${todayStr}）の鉄板イベントはありません`);
+      return;
+    }
+    
+    // 最初のイベントを投稿（複数ある場合は最初の1件のみ）
+    const event = todayEvents[0];
+    console.log(`📌 イベント投稿: ${event.title} (id=${event.id})`);
+    
+    // 投稿文生成
+    const text = await generateEventPost(event);
+    
+    // X APIに投稿
+    await postEventToX(event, text);
+    
+    console.log(`✅ 鉄板イベント投稿完了: ${event.title}`);
+  } catch (error) {
+    console.error(`❌ 鉄板イベント投稿エラー: ${error.message}`);
+    console.error(error.stack);
+  }
+}
+
+/**
+ * イベント投稿を実行する関数（今日は何の日用）
+ */
+async function executeTodayEventPost() {
+  try {
+    console.log(`📅 [${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}] 今日は何の日投稿を実行します`);
+    
+    // 今日の日付を取得
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    // 今日のイベントを取得
+    const events = await eventService.getTodayEvents(todayStr);
+    
+    if (events.length === 0) {
+      console.log(`ℹ️ 今日（${todayStr}）の「今日は何の日」イベントはありません`);
+      return;
+    }
+    
+    // 最初のイベントを投稿（複数ある場合は最初の1件のみ）
+    const event = events[0];
+    console.log(`📌 イベント投稿: ${event.title} (id=${event.id})`);
+    
+    // 投稿文生成
+    const text = await generateEventPost(event);
+    
+    // X APIに投稿
+    await postEventToX(event, text);
+    
+    console.log(`✅ 今日は何の日投稿完了: ${event.title}`);
+  } catch (error) {
+    console.error(`❌ 今日は何の日投稿エラー: ${error.message}`);
+    console.error(error.stack);
+  }
+}
+
 app.listen(3001, async () => {
   console.log("🚀 Simple Final API Server on port 3001");
   
   // アプリケーション起動時にスケジュールを初期化
   console.log("📅 自動投稿スケジュールを初期化中...");
   await initializeSchedule();
+  
+  // イベント投稿スケジュールを設定
+  console.log("📅 イベント投稿スケジュールを設定中...");
+  
+  // 1. 鉄板イベント用cron（JST 08:00 = UTC 23:00）
+  const fixedEventTask = cron.schedule('0 23 * * *', executeFixedEventPost, {
+    scheduled: true,
+    timezone: "UTC"
+  });
+  eventScheduledTasks.push(fixedEventTask);
+  console.log("✅ 鉄板イベント投稿スケジュール設定完了: 毎日 JST 08:00 (cron: 0 23 * * *)");
+  
+  // 2. 今日は何の日用cron（JST 08:15 = UTC 23:15）
+  const todayEventTask = cron.schedule('15 23 * * *', executeTodayEventPost, {
+    scheduled: true,
+    timezone: "UTC"
+  });
+  eventScheduledTasks.push(todayEventTask);
+  console.log("✅ 今日は何の日投稿スケジュール設定完了: 毎日 JST 08:15 (cron: 15 23 * * *)");
+  
   console.log("✅ サーバー起動完了");
 });
