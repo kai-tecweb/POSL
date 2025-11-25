@@ -856,7 +856,7 @@ async function getRecentDiaries(connection, userId, limit = 3) {
   try {
     const [rows] = await connection.execute(
       "SELECT diary_data, content FROM diaries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-      [userId, limit]
+      [userId, parseInt(limit)]
     );
     return rows.map(row => {
       const diaryData = typeof row.diary_data === 'string'
@@ -1102,9 +1102,12 @@ async function generatePromptWithSettings(connection, userId) {
     );
     if (productRows.length > 0) {
       product = productRows[0];
+      console.log(`✅ 商品情報取得成功: productId=${product.id}, name=${product.name}`);
+    } else {
+      console.log(`⚠️ 有効な商品が見つかりません（userId=${userId}）`);
     }
   } catch (error) {
-    console.warn("商品取得エラー:", error);
+    console.error("❌ 商品取得エラー:", error);
   }
 
   // システムプロンプト構築（プロンプト設計書11-2に準拠）
