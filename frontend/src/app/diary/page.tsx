@@ -13,6 +13,14 @@ const AudioDiary = () => {
   const [recordingTime, setRecordingTime] = useState(0)
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
   const [audioChunks, setAudioChunks] = useState<Blob[]>([])
+  
+  // HTTPS接続チェック（クライアントサイドのみ）
+  const isSecureContext = typeof window !== 'undefined' && (
+    window.isSecureContext || 
+    window.location.protocol === 'https:' || 
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1'
+  )
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
@@ -43,7 +51,57 @@ const AudioDiary = () => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // HTTPSチェック（getUserMediaはHTTPSまたはlocalhostでのみ動作）
+      // 注意: 一部のブラウザではHTTP接続でも動作する場合がありますが、セキュリティ上の理由から推奨されません
+      const isSecureContext = window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      
+      if (!isSecureContext) {
+        // HTTP接続時は警告を表示（ただし、試行は許可）
+        const shouldContinue = window.confirm(
+          '⚠️ HTTP接続ではマイクアクセスが制限される可能性があります。\n\n' +
+          '【推奨】\n' +
+          '音声ファイルのアップロード機能をご利用ください（HTTP接続でも完全に動作します）。\n\n' +
+          '【続行】\n' +
+          'それでも録音を試行しますか？\n' +
+          '（ブラウザによっては動作しない場合があります）'
+        )
+        
+        if (!shouldContinue) {
+          // ファイルアップロードに誘導
+          if (fileInputRef.current) {
+            setTimeout(() => {
+              fileInputRef.current?.click()
+            }, 300)
+          }
+          return
+        }
+      }
+
+      // マイク権限の確認（可能な場合）
+      let permissionState = 'prompt'
+      try {
+        if (navigator.permissions && navigator.permissions.query) {
+          const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+          permissionState = permissionStatus.state
+          
+          if (permissionState === 'denied') {
+            alert('マイクへのアクセスが拒否されています。\n\n【解決方法】\n1. ブラウザのアドレスバーにあるマイクアイコン（🔒）をクリック\n2. 「マイク」を「許可」に変更\n3. ページを再読み込みしてください\n\nまたは、音声ファイルのアップロード機能をご利用ください。')
+            return
+          }
+        }
+      } catch (permError) {
+        // 権限APIがサポートされていない場合は続行
+        console.log('Permission API not supported, continuing...')
+      }
+
+      // マイクアクセスの要求
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      })
       const recorder = new MediaRecorder(stream)
       
       recorder.ondataavailable = (event) => {
@@ -83,8 +141,39 @@ const AudioDiary = () => {
         setRecordingTime(0)
       })
 
-    } catch (error) {
-      alert('マイクへのアクセスが拒否されました')
+    } catch (error: any) {
+      console.error('Recording error:', error)
+      
+      let errorMessage = ''
+      let showFileUploadOption = false
+      
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMessage = 'マイクへのアクセスが拒否されました。\n\n【解決方法】\n1. ブラウザのアドレスバーにあるマイクアイコン（🔒）をクリック\n2. 「マイク」を「許可」に変更\n3. ページを再読み込みしてください\n\nまたは、音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        errorMessage = 'マイクが見つかりません。\n\n【確認事項】\n1. マイクが接続されているか確認してください\n2. 他のアプリケーションがマイクを使用していないか確認してください\n\nまたは、音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else if (error.name === 'NotSupportedError' || error.name === 'NotReadableError') {
+        errorMessage = 'お使いのブラウザまたはデバイスは音声録音をサポートしていません。\n\n【推奨】\nChrome、Firefox、Safariの最新版をお使いください。\n\nまたは、音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else if (error.name === 'SecurityError' || error.name === 'TypeError') {
+        errorMessage = 'セキュリティ上の理由でマイクにアクセスできません。\n\n【原因】\nHTTP接続ではマイクアクセスが許可されていません。\n\n【解決方法】\n音声ファイルのアップロード機能をご利用ください。'
+        showFileUploadOption = true
+      } else {
+        errorMessage = `録音を開始できませんでした: ${error.message || '不明なエラーが発生しました'}\n\n音声ファイルのアップロード機能をご利用ください。`
+        showFileUploadOption = true
+      }
+      
+      alert(errorMessage)
+      
+      // ファイルアップロードを促す
+      if (showFileUploadOption && fileInputRef.current) {
+        setTimeout(() => {
+          if (window.confirm('音声ファイルのアップロードに切り替えますか？')) {
+            fileInputRef.current?.click()
+          }
+        }, 500)
+      }
     }
   }
 
@@ -168,15 +257,46 @@ const AudioDiary = () => {
               <div className="border-t pt-6">
                 <h4 className="text-sm font-medium text-gray-900 mb-4">または直接録音</h4>
                 
+                {/* HTTP接続時の警告 */}
+                {!isSecureContext && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                    <div className="flex">
+                      <svg className="w-5 h-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      <div className="text-sm text-red-700">
+                        <p className="font-medium">⚠️ HTTP接続では録音機能が利用できません</p>
+                        <p className="mt-1">音声録音機能はHTTPS接続またはlocalhostでのみ利用できます。現在はHTTP接続のため、上記の「音声ファイルのアップロード」機能をご利用ください。</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* HTTPS接続時のマイク権限の説明 */}
+                {isSecureContext && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <div className="flex">
+                      <svg className="w-5 h-5 text-yellow-400 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <div className="text-sm text-yellow-700">
+                        <p className="font-medium">マイク権限が必要です</p>
+                        <p className="mt-1">録音ボタンをクリックすると、ブラウザからマイクへのアクセス許可を求められます。拒否された場合は、ブラウザのアドレスバーにあるマイクアイコン（🔒）をクリックして許可してください。</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 {!isRecording ? (
                   <Button
                     onClick={startRecording}
                     className="w-full flex items-center justify-center"
+                    disabled={!isSecureContext}
                   >
                     <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
                     </svg>
-                    録音開始
+                    {isSecureContext ? '録音開始' : '録音機能はHTTPS接続が必要です'}
                   </Button>
                 ) : (
                   <div className="space-y-3">
@@ -204,11 +324,17 @@ const AudioDiary = () => {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h4 className="text-sm font-medium text-blue-900 mb-2">💡 録音のコツ</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• 初回はブラウザでマイク許可を選択</li>
                   <li>• 静かな環境で録音する</li>
                   <li>• マイクから適切な距離を保つ</li>
                   <li>• ゆっくりとはっきり話す</li>
                   <li>• 5-10分程度が最適な長さです</li>
                 </ul>
+                <div className="mt-3 pt-3 border-t border-blue-200">
+                  <p className="text-xs text-blue-700">
+                    <strong>トラブルシューティング:</strong> マイクが使用できない場合は、ブラウザのアドレスバーのマイクアイコンをクリックして設定を確認してください。
+                  </p>
+                </div>
               </div>
             </div>
           </Card>

@@ -13,6 +13,7 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "declaration": true,
+    "ignoreDeprecations": "6.0",
     "declarationMap": true,
     "sourceMap": true,
     "noImplicitAny": false,

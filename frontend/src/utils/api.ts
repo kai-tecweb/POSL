@@ -1,121 +1,279 @@
-// API endpoints - 環境に応じて動的に設定
+// API endpoints - 本番環境対応版（完全版）
 const getApiBaseUrl = () => {
   // ブラウザ環境でない場合（SSR）
   if (typeof window === 'undefined') {
-    return '/api'
+    // サーバーサイドでは環境変数から取得、なければ相対パスを使用
+    return process.env.NEXT_PUBLIC_API_URL || ''
   }
   
-  // ブラウザ環境での判定
-  const hostname = window.location.hostname
-  console.log('Current hostname:', hostname) // デバッグログ
+  // ブラウザ環境では常に相対パスを使用（Nginxがプロキシするため）
+  // /dev/エンドポイントの場合は/dev、それ以外は/apiを使用
+  return ''
+}
+
+// エラーハンドリング用のユーティリティ
+const handleApiError = async (response: Response) => {
+  if (!response.ok) {
+    let errorText: string
+    try {
+      errorText = await response.text()
+    } catch {
+      errorText = response.statusText
+    }
+    console.error('API Error:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText,
+      url: response.url
+    })
+    throw new Error(`API Error ${response.status}: ${errorText || response.statusText}`)
+  }
+  return response
+}
+
+// 共通のfetch wrapper
+const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  // エンドポイントが既に完全なURLの場合はそのまま使用
+  if (endpoint.startsWith('http')) {
+    const url = endpoint
+    console.log('API Request (absolute URL):', {
+      method: options.method || 'GET',
+      url: url
+    })
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...options.headers
+      },
+      credentials: 'same-origin',
+      ...options
+    })
+    await handleApiError(response)
+    const contentType = response.headers.get('content-type')
+    if (contentType && contentType.includes('application/json')) {
+      const text = await response.text()
+      if (!text) return null
+      try {
+        return JSON.parse(text)
+      } catch {
+        return text
+      }
+    } else {
+      return await response.text()
+    }
+  }
   
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    // ローカル開発環境
-    console.log('Using localhost API')
-    return 'http://localhost:3001'
-  } else {
-    // AWS本番環境 - 相対パスでNginxプロキシを利用
-    console.log('Using production API path: /api')
-    return '/api'
+  // 相対パスの場合はそのまま使用（Nginxが適切にプロキシする）
+  const url = endpoint
+  
+  console.log('API Request:', {
+    method: options.method || 'GET',
+    url: url,
+    headers: options.headers
+  })
+  
+  const defaultOptions: RequestInit = {
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...options.headers
+    },
+    credentials: 'same-origin',
+    ...options
+  }
+  
+  try {
+    const response = await fetch(url, defaultOptions)
+    await handleApiError(response)
+    
+    // レスポンスが空の場合の処理
+    const contentType = response.headers.get('content-type')
+    if (contentType && contentType.includes('application/json')) {
+      const text = await response.text()
+      if (!text) return null
+      try {
+        return JSON.parse(text)
+      } catch {
+        return text
+      }
+    } else {
+      return await response.text()
+    }
+  } catch (error) {
+    console.error('API Request failed:', error)
+    throw error
   }
 }
 
 // API utility functions for settings
 export const settingsAPI = {
   async getSettings(settingType: string) {
-    const baseUrl = getApiBaseUrl()
-    console.log('Settings API call to:', `${baseUrl}/settings/${settingType}`)
-    const response = await fetch(`${baseUrl}/settings/${settingType}`)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${settingType} settings`)
-    }
-    return response.json()
+    console.log('Getting settings:', settingType)
+    return await apiRequest(`/dev/settings/${settingType}`)
   },
 
   async updateSettings(settingType: string, data: any) {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/settings/${settingType}`, {
+    console.log('Updating settings:', settingType, data)
+    return await apiRequest(`/dev/settings/${settingType}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(data)
     })
-    if (!response.ok) {
-      throw new Error(`Failed to update ${settingType} settings`)
-    }
-    return response.json()
+  }
+}
+
+// API utility functions for posts
+export const postsAPI = {
+  async getPosts(limit = 10) {
+    console.log('Getting posts, limit:', limit)
+    return await apiRequest(`/api/post/logs?limit=${limit}`)
+  },
+
+  async createTestPost() {
+    console.log('Creating test post')
+    return await apiRequest('/dev/post/test-generate', {
+      method: 'POST'
+    })
+  },
+
+  async createAIPost() {
+    console.log('Creating AI post with X posting')
+    return await apiRequest('/dev/post/ai-with-x', {
+      method: 'POST'
+    })
+  },
+
+  async createSimpleAIPost() {
+    console.log('Creating simple AI post')
+    return await apiRequest('/dev/post/simple-ai', {
+      method: 'POST'
+    })
   }
 }
 
 // API utility functions for trends
 export const trendsAPI = {
-  async fetchTrends() {
-    const baseUrl = getApiBaseUrl()
-    console.log('Trends API call to:', `${baseUrl}/trends/google`)
-    const response = await fetch(`${baseUrl}/trends/google`)
-    if (!response.ok) {
-      throw new Error('Failed to fetch trends')
-    }
-    return response.json()
-  }
-}
-
-// API utility functions for post logs
-export const postsAPI = {
-  async getPostLogs(limit: number = 20) {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/post/logs?limit=${limit}`)
-    if (!response.ok) {
-      throw new Error('Failed to fetch post logs')
-    }
-    return response.json()
-  },
-
-  async getPostStatus(limit: number = 20) {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/post/status?limit=${limit}`)
-    if (!response.ok) {
-      throw new Error('Failed to fetch post status')
-    }
-    return response.json()
-  },
-
-  async testPost(content: string) {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/test/post`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ content })
-    })
-    if (!response.ok) {
-      throw new Error('Failed to send test post')
-    }
-    return response.json()
+  async getTrends() {
+    console.log('Getting trends')
+    return await apiRequest('/api/trend/latest')
   }
 }
 
 // API utility functions for error logs
 export const errorLogsAPI = {
-  async getErrorLogs(limit: number = 10) {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/errors/logs?limit=${limit}`)
-    if (!response.ok) {
-      throw new Error('Failed to fetch error logs')
-    }
-    return response.json()
+  async getErrorLogs(limit = 10) {
+    console.log('Getting error logs, limit:', limit)
+    return await apiRequest(`/api/errors/logs?limit=${limit}`)
   },
 
   async clearErrorLogs() {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/errors/logs`, {
+    console.log('Clearing error logs')
+    return await apiRequest('/api/errors/logs', {
       method: 'DELETE'
     })
-    if (!response.ok) {
-      throw new Error('Failed to clear error logs')
+  }
+}
+
+// Health check
+export const healthAPI = {
+  async checkHealth() {
+    console.log('Checking API health')
+    return await apiRequest('/health')
+  }
+}
+
+// API utility functions for diary
+export const diaryAPI = {
+  async transcribeAudio(audioData: string, audioUrl?: string) {
+    console.log('Transcribing audio')
+    return await apiRequest('/api/diary/transcribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: 'demo',
+        audioData: audioData,
+        audioUrl: audioUrl
+      })
+    })
+  },
+
+  async getDiaries(userId: string = 'demo', limit: number = 10) {
+    console.log('Getting diaries', { userId, limit })
+    return await apiRequest(`/api/diary/list?userId=${userId}&limit=${limit}`)
+  },
+
+  async deleteDiary(diaryId: string, userId: string = 'demo') {
+    console.log('Deleting diary', { diaryId, userId })
+    return await apiRequest(`/api/diary/${diaryId}?userId=${userId}`, {
+      method: 'DELETE'
+    })
+  }
+}
+
+// API utility functions for persona
+export const personaAPI = {
+  async getProfile(userId: string = 'demo') {
+    console.log('Getting persona profile', { userId })
+    return await apiRequest(`/api/persona/profile?userId=${userId}`)
+  }
+}
+
+// 型定義
+export interface Post {
+  id: number
+  content: string
+  tweet_id?: string
+  status: 'draft' | 'posted' | 'failed'
+  created_at: string
+  updated_at: string
+}
+
+export interface Settings {
+  id: number
+  user_id: string
+  setting_type: string
+  setting_data: any
+  created_at: string
+  updated_at: string
+}
+
+export interface ErrorLog {
+  id: number
+  error_type: string
+  error_message: string
+  stack_trace?: string
+  created_at: string
+}
+
+export interface Trend {
+  id: number
+  trend_data: any
+  created_at: string
+}
+
+export interface ApiResponse<T = any> {
+  success: boolean
+  data?: T
+  error?: string
+  message?: string
+}
+
+// デバッグ用のAPI状態確認
+export const debugAPI = {
+  async testConnection() {
+    const baseUrl = getApiBaseUrl()
+    console.log('Testing API connection to:', baseUrl)
+    
+    try {
+      const health = await healthAPI.checkHealth()
+      console.log('API Health:', health)
+      return { success: true, data: health }
+    } catch (error: any) {
+      console.error('API Connection failed:', error)
+      return { success: false, error: String(error?.message || error) }
     }
-    return response.json()
+  },
+  
+  getBaseUrl() {
+    return getApiBaseUrl()
   }
 }

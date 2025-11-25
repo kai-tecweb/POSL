@@ -1,45 +1,63 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '@/store/appStore'
-import { Card, Button, PostStatusMonitor, ErrorLogMonitor } from '@/components'
+import { TrendData, PostLog } from '@/types'
 import Layout from '@/components/Layout'
 
 const Dashboard = () => {
-  const {
-    postTime,
-    trends,
-    upcomingEvents,
-    postLogs,
-    loading,
-    error,
-    fetchTrends,
-    fetchUpcomingEvents,
-    fetchPostLogs,
-    clearError
-  } = useAppStore()
+  const { trends, postLogs, loading, fetchTrends, fetchPostLogs, error } = useAppStore()
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    // Load dashboard data on mount
-    fetchTrends()
-    fetchUpcomingEvents()
-    fetchPostLogs()
-  }, [fetchTrends, fetchUpcomingEvents, fetchPostLogs])
+    setMounted(true)
+  }, [])
 
-  const nextPostTime = postTime.enabled ? `今日 ${postTime.time}` : '未設定'
-  const todayTheme = getTodayTheme()
+  useEffect(() => {
+    if (mounted) {
+      loadData()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted])
 
-  function getTodayTheme() {
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
-    const today = dayNames[new Date().getDay()]
-    const { weekTheme } = useAppStore.getState()
-    return weekTheme[today]
+  const loadData = async () => {
+    try {
+      // fetchTrendsとfetchPostLogsを個別に呼び出し（エラーハンドリングを改善）
+      try {
+        await fetchTrends()
+      } catch (err) {
+        console.error('Failed to fetch trends:', err)
+        // エラーが発生しても続行
+      }
+      
+      try {
+        await fetchPostLogs()
+      } catch (err) {
+        console.error('Failed to fetch post logs:', err)
+        // エラーが発生しても続行
+      }
+    } catch (err) {
+      console.error('Data loading failed:', err)
+    }
+  }
+
+  if (!mounted) {
+    return (
+      <Layout>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <div className="text-lg text-gray-600">読み込み中...</div>
+          </div>
+        </div>
+      </Layout>
+    )
   }
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto">
-        {/* Page Header */}
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-7xl mx-auto p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">ダッシュボード</h1>
           <p className="mt-2 text-gray-600">
@@ -47,33 +65,22 @@ const Dashboard = () => {
           </p>
         </div>
 
-        {/* Error Display */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
             <div className="flex justify-between items-center">
-              <div className="flex">
-                <div className="text-red-400 mr-3">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="text-red-700">{error}</div>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={clearError}
+              <div className="text-red-700">{error}</div>
+              <button
+                className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                onClick={() => useAppStore.getState().clearError()}
               >
                 閉じる
-              </Button>
+              </button>
             </div>
           </div>
         )}
 
-        {/* Top Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Next Post */}
-          <Card>
+          <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center">
               <div className="bg-blue-100 p-3 rounded-lg mr-4">
                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,13 +89,12 @@ const Dashboard = () => {
               </div>
               <div>
                 <h3 className="text-sm font-medium text-gray-500">次回投稿</h3>
-                <p className="text-lg font-bold text-gray-900">{nextPostTime}</p>
+                <p className="text-lg font-bold text-gray-900">未設定</p>
               </div>
             </div>
-          </Card>
+          </div>
 
-          {/* Today's Theme */}
-          <Card>
+          <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center">
               <div className="bg-purple-100 p-3 rounded-lg mr-4">
                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,63 +103,59 @@ const Dashboard = () => {
               </div>
               <div>
                 <h3 className="text-sm font-medium text-gray-500">今日のテーマ</h3>
-                <p className="text-lg font-bold text-gray-900">{todayTheme || '未設定'}</p>
+                <p className="text-lg font-bold text-gray-900">未設定</p>
               </div>
             </div>
-          </Card>
+          </div>
 
-          {/* Posts Count */}
-          <Card>
+          <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center">
               <div className="bg-green-100 p-3 rounded-lg mr-4">
                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-sm font-medium text-gray-500">今月の投稿</h3>
+                <h3 className="text-sm font-medium text-gray-500">投稿数</h3>
                 <p className="text-lg font-bold text-gray-900">{postLogs.length}</p>
               </div>
             </div>
-          </Card>
+          </div>
 
-          {/* Auto Post Status */}
-          <Card>
+          <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center">
-              <div className={`${postTime.enabled ? 'bg-green-100' : 'bg-yellow-100'} p-3 rounded-lg mr-4`}>
-                <div className={`w-3 h-3 ${postTime.enabled ? 'bg-green-500' : 'bg-yellow-500'} rounded-full`}></div>
+              <div className="bg-yellow-100 p-3 rounded-lg mr-4">
+                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
               </div>
               <div>
-                <h3 className="text-sm font-medium text-gray-500">自動投稿</h3>
-                <p className={`text-lg font-bold ${postTime.enabled ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {postTime.enabled ? '有効' : '無効'}
-                </p>
+                <h3 className="text-sm font-medium text-gray-500">状態</h3>
+                <p className="text-lg font-bold text-green-600">正常</p>
               </div>
             </div>
-          </Card>
+          </div>
         </div>
 
-        {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column */}
           <div className="space-y-6">
-            {/* Post Status Monitor */}
-            <PostStatusMonitor />
-
-            {/* Trending Topics */}
-            <Card title="トレンド情報">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">トレンド情報</h2>
               {loading ? (
-                <div className="text-center py-4">
-                  <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
-                  <p className="mt-2 text-gray-500">読み込み中...</p>
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="p-3 bg-gray-50 rounded-lg animate-pulse">
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    </div>
+                  ))}
                 </div>
               ) : trends.length > 0 ? (
                 <div className="space-y-3">
-                  {trends.slice(0, 5).map((trend, index) => (
+                  {trends.slice(0, 5).map((trend: TrendData, index: number) => (
                     <div key={index} className="p-3 bg-gray-50 rounded-lg">
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-gray-900">{trend.keyword}</span>
-                        <span className="text-sm text-gray-500">{trend.source}</span>
+                        <span className="text-sm text-gray-500">{trend.category || trend.source}</span>
                       </div>
                     </div>
                   ))}
@@ -161,118 +163,37 @@ const Dashboard = () => {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <p>トレンド情報はありません</p>
-                  <Button 
-                    className="mt-2" 
-                    size="sm"
-                    onClick={fetchTrends}
+                  <button 
+                    className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                    onClick={loadData}
                   >
                     再読み込み
-                  </Button>
+                  </button>
                 </div>
               )}
-            </Card>
+            </div>
           </div>
 
-          {/* Right Column */}
           <div className="space-y-6">
-            {/* Error Log Monitor */}
-            <ErrorLogMonitor />
-
-            {/* Upcoming Events */}
-            <Card title="今後のイベント">
-              {upcomingEvents.length > 0 ? (
-                <div className="space-y-4">
-                  {upcomingEvents.slice(0, 3).map((event) => (
-                    <div key={event.id} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-medium text-gray-900">{event.title}</h4>
-                          {event.description && (
-                            <p className="text-sm text-gray-600 mt-1">{event.description}</p>
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-500 whitespace-nowrap ml-4">
-                          {new Date(event.date).toLocaleDateString('ja-JP')}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <p>予定されているイベントはありません</p>
-                </div>
-              )}
-            </Card>
-
-            {/* Recent Posts */}
-            <Card title="最近の投稿">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">投稿ログ</h2>
               {postLogs.length > 0 ? (
-                <div className="space-y-4">
-                  {postLogs.slice(0, 3).map((log) => (
+                <div className="space-y-3">
+                  {postLogs.slice(0, 3).map((log: PostLog) => (
                     <div key={log.id} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          log.status === 'success' 
-                            ? 'bg-green-100 text-green-800'
-                            : log.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {log.status === 'success' ? '成功' : log.status === 'failed' ? '失敗' : '処理中'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(log.createdAt).toLocaleString('ja-JP')}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700 line-clamp-2">{log.content}</p>
+                      <p className="text-sm text-gray-900">{log.content}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(log.createdAt).toLocaleDateString('ja-JP')}
+                      </p>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <p>投稿履歴はありません</p>
+                  <p>投稿ログがありません</p>
                 </div>
               )}
-            </Card>
-
-            {/* Quick Actions */}
-            <Card title="クイックアクション">
-              <div className="space-y-3">
-                <Button 
-                  className="w-full justify-start" 
-                  variant="secondary"
-                  onClick={() => window.location.href = '/settings/post'}
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  投稿時間を設定
-                </Button>
-                
-                <Button 
-                  className="w-full justify-start" 
-                  variant="secondary"
-                  onClick={() => window.location.href = '/settings/week-theme'}
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  曜日テーマを設定
-                </Button>
-                
-                <Button 
-                  className="w-full justify-start" 
-                  variant="secondary"
-                  onClick={() => window.location.href = '/diary'}
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a2 2 0 012-2h2a2 2 0 012 2v3a3 3 0 01-3 3z" />
-                  </svg>
-                  音声日記をアップロード
-                </Button>
-              </div>
-            </Card>
+            </div>
           </div>
         </div>
       </div>

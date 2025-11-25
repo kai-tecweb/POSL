@@ -14,7 +14,7 @@ import type {
   PostLog,
   DiaryEntry
 } from '@/types'
-import { settingsAPI, trendsAPI, postsAPI } from '@/utils/api'
+import { settingsAPI, trendsAPI, postsAPI, diaryAPI, personaAPI } from '@/utils/api'
 
 interface AppStore extends AppState {
   // Settings actions
@@ -117,6 +117,33 @@ const defaultPromptSettings: PromptSettings = {
   preferredPhrases: []
 }
 
+// localStorageアクセスのエラーハンドリング
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key)
+    } catch (error) {
+      console.warn('localStorage access failed (possibly blocked by extension):', error)
+      return null
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value)
+    } catch (error) {
+      console.warn('localStorage write failed (possibly blocked by extension):', error)
+      // エラーを無視して続行
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key)
+    } catch (error) {
+      console.warn('localStorage remove failed (possibly blocked by extension):', error)
+    }
+  }
+}
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -137,10 +164,15 @@ export const useAppStore = create<AppStore>()(
       loading: false,
       error: null,
 
-      // Initialize settings from backend on startup
+      // Initialize settings from backend on startup (非同期でエラーを無視)
       initialize: async () => {
-        const { loadAllSettings } = get()
-        await loadAllSettings()
+        try {
+          const { loadAllSettings } = get()
+          await loadAllSettings()
+        } catch (error) {
+          console.warn('Settings initialization failed, continuing with defaults:', error)
+          // エラーを無視して続行 - 設定APIが失敗してもダッシュボード表示は継続
+        }
       },
 
       // Settings actions
@@ -182,14 +214,36 @@ export const useAppStore = create<AppStore>()(
       // Settings sync actions
       savePostTime: async (settings) => {
         try {
-          set({ loading: true })
-          await settingsAPI.updateSettings('post-time', settings)
+          set({ loading: true, error: null })
+          // time (HH:MM) を hour と minute に変換
+          const [hour, minute] = settings.time.split(':').map(Number)
+          
+          if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            throw new Error('無効な時刻形式です')
+          }
+          
+          const apiData = {
+            hour,
+            minute,
+            timezone: settings.timezone || 'Asia/Tokyo',
+            enabled: settings.enabled !== undefined ? settings.enabled : true
+          }
+          
+          const response = await settingsAPI.updateSettings('post-time', apiData)
+          
+          if (!response || !response.success) {
+            throw new Error(response?.error || '設定の保存に失敗しました')
+          }
+          
           set({ postTime: settings, loading: false })
         } catch (error) {
+          console.error('投稿時間設定保存エラー:', error)
+          const errorMessage = error instanceof Error ? error.message : '投稿時間設定の保存に失敗しました'
           set({ 
-            error: '投稿時間設定の保存に失敗しました', 
+            error: errorMessage, 
             loading: false 
           })
+          throw error // 呼び出し元でエラーハンドリングできるように再スロー
         }
       },
 
@@ -261,14 +315,42 @@ export const useAppStore = create<AppStore>()(
       // Settings load actions
       loadPostTime: async () => {
         try {
-          set({ loading: true })
+          set({ loading: true, error: null })
           const response = await settingsAPI.getSettings('post-time')
-          set({ postTime: response.data, loading: false })
-        } catch (error) {
+          
+          if (!response || !response.data) {
+            throw new Error('設定データが取得できませんでした')
+          }
+          
+          // hour と minute を time (HH:MM) に変換
+          const data = response.data
+          
+          // データの検証
+          if (typeof data.hour !== 'number' || typeof data.minute !== 'number') {
+            throw new Error('無効な時刻データです')
+          }
+          
+          const time = `${String(data.hour).padStart(2, '0')}:${String(data.minute).padStart(2, '0')}`
+          
+          const newPostTime = {
+            enabled: data.enabled !== undefined ? data.enabled : true,
+            time,
+            timezone: data.timezone || 'Asia/Tokyo'
+          }
+          
           set({ 
-            error: '投稿時間設定の読み込みに失敗しました', 
+            postTime: newPostTime, 
             loading: false 
           })
+          
+          console.log('投稿時刻設定を読み込みました:', newPostTime)
+        } catch (error) {
+          console.error('投稿時刻設定の読み込みエラー:', error)
+          set({ 
+            error: error instanceof Error ? error.message : '投稿時間設定の読み込みに失敗しました', 
+            loading: false 
+          })
+          // エラーが発生してもデフォルト値は保持（既存の設定を上書きしない）
         }
       },
 
@@ -342,7 +424,8 @@ export const useAppStore = create<AppStore>()(
         
         try {
           set({ loading: true })
-          await Promise.allSettled([
+          // Promise.allSettledを使用してエラーがあっても他の設定読み込みを継続
+          const results = await Promise.allSettled([
             loadPostTime(),
             loadWeekTheme(), 
             loadTrend(),
@@ -350,10 +433,18 @@ export const useAppStore = create<AppStore>()(
             loadTemplate(),
             loadPrompt()
           ])
+          
+          // 失敗した設定をログ出力（ただしエラーとして扱わない）
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.warn(`設定読み込み失敗 (index ${index}):`, result.reason)
+            }
+          })
+          
           set({ loading: false })
         } catch (error) {
+          console.warn('設定の読み込みでエラーが発生しましたが、デフォルト値で継続します:', error)
           set({ 
-            error: '設定の読み込みに失敗しました', 
             loading: false 
           })
         }
@@ -363,22 +454,28 @@ export const useAppStore = create<AppStore>()(
       fetchTrends: async () => {
         console.log('fetchTrends called - starting trend fetch')
         try {
-          set({ loading: true })
-          console.log('Making API call to trendsAPI.fetchTrends()')
-          const response = await trendsAPI.fetchTrends()
+          set({ loading: true, error: null })
+          
+          // trendsAPI.getTrends()を正しく呼び出す
+          if (!trendsAPI || typeof trendsAPI.getTrends !== 'function') {
+            throw new Error('trendsAPI.getTrends is not a function')
+          }
+          
+          console.log('Making API call to trendsAPI.getTrends()')
+          const response = await trendsAPI.getTrends()
           console.log('API response received:', response)
           
           // Transform Google Trends response to TrendData format
-          const trends: TrendData[] = response.data?.trends?.map((trend: any, index: number) => ({
+          const trends: TrendData[] = response?.data?.trends?.map((trend: any, index: number) => ({
             rank: index + 1,
-            keyword: trend.query || trend.keyword || trend.title,
-            source: 'google',
-            category: 'トレンド'
+            keyword: trend.query || trend.keyword || trend.title || `トレンド${index + 1}`,
+            source: trend.source || 'google',
+            category: trend.category || 'トレンド'
           })) || []
           
           console.log('Transformed trends:', trends)
-          set({ trends, loading: false })
-        } catch (error) {
+          set({ trends, loading: false, error: null })
+        } catch (error: any) {
           console.error('Failed to fetch trends:', error)
           // Fallback to mock data
           const mockTrends: TrendData[] = [
@@ -388,7 +485,7 @@ export const useAppStore = create<AppStore>()(
           ]
           set({ 
             trends: mockTrends, 
-            error: 'トレンド情報の取得に失敗しました（モックデータを表示中）', 
+            error: `トレンド情報の取得に失敗しました: ${error?.message || '不明なエラー'}（モックデータを表示中）`, 
             loading: false 
           })
         }
@@ -419,7 +516,23 @@ export const useAppStore = create<AppStore>()(
       fetchPostLogs: async () => {
         set({ loading: true })
         try {
-          // TODO: Implement API call
+          console.log('Making API call to postsAPI.getPosts()')
+          const response = await postsAPI.getPosts()
+          console.log('Post logs API response:', response)
+          
+          // Transform API response to PostLog format
+          const postLogs: PostLog[] = response.data?.posts?.map((post: any) => ({
+            id: post.postId || post.id,
+            content: post.content || 'コンテンツなし',
+            createdAt: post.createdAt || post.timestamp,
+            platform: 'x',
+            status: post.success ? 'success' : 'error'
+          })) || []
+          
+          set({ postLogs, loading: false })
+        } catch (error) {
+          console.error('Failed to fetch post logs:', error)
+          // Fallback to mock data
           const mockLogs: PostLog[] = [
             {
               id: '1',
@@ -430,10 +543,9 @@ export const useAppStore = create<AppStore>()(
             }
           ]
           
-          set({ postLogs: mockLogs, loading: false })
-        } catch (error) {
           set({ 
-            error: '投稿ログの取得に失敗しました', 
+            postLogs: mockLogs, 
+            error: '投稿ログの取得に失敗しました（モックデータを表示中）',
             loading: false 
           })
         }
@@ -442,12 +554,31 @@ export const useAppStore = create<AppStore>()(
       fetchDiaryEntries: async () => {
         set({ loading: true })
         try {
-          // TODO: Implement API call
-          const mockEntries: DiaryEntry[] = []
+          const response = await diaryAPI.getDiaries('demo', 20)
           
-          set({ diaryEntries: mockEntries, loading: false })
+          if (response.success && response.data) {
+            const entries: DiaryEntry[] = response.data.map((diary: any) => ({
+              id: diary.id,
+              filename: diary.id,
+              originalFilename: diary.data?.title || '音声日記',
+              uploadedAt: diary.createdAt || new Date().toISOString(),
+              transcriptionStatus: diary.data?.transcription_status || 'completed',
+              fileSize: 0,
+              content: diary.content || ''
+            }))
+            
+            set({ diaryEntries: entries, loading: false })
+          } else {
+            set({ 
+              diaryEntries: [],
+              error: response.error || '日記データの取得に失敗しました',
+              loading: false 
+            })
+          }
         } catch (error) {
+          console.error('日記データ取得エラー:', error)
           set({ 
+            diaryEntries: [],
             error: '日記データの取得に失敗しました', 
             loading: false 
           })
@@ -458,21 +589,65 @@ export const useAppStore = create<AppStore>()(
       uploadDiary: async (file: File) => {
         set({ loading: true })
         try {
-          // TODO: Implement file upload API call
-          const newEntry: DiaryEntry = {
-            id: Date.now().toString(),
+          // ファイルをBase64エンコード
+          const reader = new FileReader()
+          const audioData = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const result = reader.result as string
+              // data:audio/mp3;base64, の部分を取得
+              resolve(result)
+            }
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          })
+          
+          // 一時的なエントリを追加（アップロード中表示用）
+          const tempEntry: DiaryEntry = {
+            id: `temp_${Date.now()}`,
             filename: `diary_${Date.now()}.mp3`,
             originalFilename: file.name,
             uploadedAt: new Date().toISOString(),
-            transcriptionStatus: 'pending',
+            transcriptionStatus: 'processing',
             fileSize: file.size
           }
           
           set((state) => ({
-            diaryEntries: [...state.diaryEntries, newEntry],
-            loading: false
+            diaryEntries: [tempEntry, ...state.diaryEntries],
+            loading: true
           }))
+          
+          // API呼び出し
+          const response = await diaryAPI.transcribeAudio(audioData)
+          
+          if (response.success && response.data) {
+            // 成功時: 一時エントリを削除して、実際のエントリを追加
+            const newEntry: DiaryEntry = {
+              id: response.data.diaryId,
+              filename: response.data.diaryId,
+              originalFilename: file.name,
+              uploadedAt: response.data.timestamp || new Date().toISOString(),
+              transcriptionStatus: 'completed',
+              fileSize: file.size,
+              content: response.data.transcription || ''
+            }
+            
+            set((state) => ({
+              diaryEntries: [
+                newEntry,
+                ...state.diaryEntries.filter(e => e.id !== tempEntry.id)
+              ],
+              loading: false
+            }))
+          } else {
+            // 失敗時: 一時エントリを削除
+            set((state) => ({
+              diaryEntries: state.diaryEntries.filter(e => e.id !== tempEntry.id),
+              error: response.error || '音声ファイルのアップロードに失敗しました',
+              loading: false
+            }))
+          }
         } catch (error) {
+          console.error('音声ファイルアップロードエラー:', error)
           set({ 
             error: '音声ファイルのアップロードに失敗しました', 
             loading: false 
@@ -483,12 +658,21 @@ export const useAppStore = create<AppStore>()(
       deleteDiary: async (id: string) => {
         set({ loading: true })
         try {
-          // TODO: Implement delete API call
-          set((state) => ({
-            diaryEntries: state.diaryEntries.filter(entry => entry.id !== id),
-            loading: false
-          }))
+          const response = await diaryAPI.deleteDiary(id, 'demo')
+          
+          if (response.success) {
+            set((state) => ({
+              diaryEntries: state.diaryEntries.filter(entry => entry.id !== id),
+              loading: false
+            }))
+          } else {
+            set({ 
+              error: response.error || '日記の削除に失敗しました',
+              loading: false 
+            })
+          }
         } catch (error) {
+          console.error('日記削除エラー:', error)
           set({ 
             error: '日記の削除に失敗しました', 
             loading: false 
@@ -512,7 +696,13 @@ export const useAppStore = create<AppStore>()(
         tone: state.tone,
         template: state.template,
         prompt: state.prompt
-      })
+      }),
+      // localStorageアクセスのエラーハンドリング
+      storage: {
+        getItem: safeStorage.getItem,
+        setItem: safeStorage.setItem,
+        removeItem: safeStorage.removeItem
+      }
     }
   )
 )

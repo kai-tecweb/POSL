@@ -303,11 +303,54 @@ jobs:
           NEXT_PUBLIC_API_URL: ${{ secrets.PROD_API_URL }}
         run: npm run build
       
-      - name: 📤 Deploy Frontend to Production S3
+      # EC2への直接デプロイ（現在のサーバー構成用）
+      - name: 🔑 Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts || true
+      
+      - name: 📤 Deploy to EC2 via SSH
+        run: |
+          # フロントエンドをサーバーに同期
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            frontend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/POSL-repo/frontend/
+          
+          # バックエンドをサーバーに同期
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/POSL-repo/backend/
+      
+      - name: 🚀 Restart Application on EC2
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+            cd /home/ubuntu/POSL-repo/frontend
+            npm ci --production
+            npm run build
+            pm2 restart posl-frontend || pm2 start npm --name "posl-frontend" -- start
+            
+            cd /home/ubuntu/POSL-repo/backend
+            # バックエンドの再起動（serverless offlineが実行中の場合は再起動）
+            if pgrep -f "serverless offline" > /dev/null; then
+              pkill -f "serverless offline" || true
+              sleep 2
+            fi
+            cd /home/ubuntu/POSL-repo/backend
+            nohup npm exec serverless offline --stage dev --host 0.0.0.0 --httpPort 3001 > /dev/null 2>&1 &
+          EOF
+      
+      # S3へのデプロイ（将来のCloudFront構成用、オプション）
+      - name: 📤 Deploy Frontend to Production S3 (Optional)
+        if: ${{ secrets.PROD_S3_BUCKET != '' }}
         working-directory: frontend
         run: |
           aws s3 sync out/ s3://${{ secrets.PROD_S3_BUCKET }} --delete
-          aws cloudfront create-invalidation --distribution-id ${{ secrets.PROD_CLOUDFRONT_ID }} --paths "/*"
+          if [ -n "${{ secrets.PROD_CLOUDFRONT_ID }}" ]; then
+            aws cloudfront create-invalidation --distribution-id ${{ secrets.PROD_CLOUDFRONT_ID }} --paths "/*"
+          fi
       
       # デプロイ完了通知
       - name: 📢 Deploy Success Notification
