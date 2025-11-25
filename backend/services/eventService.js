@@ -5,7 +5,9 @@
  * 機能:
  * - 今日のイベント取得
  * - タイプ別イベント取得
- * - イベントCRUD操作
+ * - イベントON/OFF切り替え
+ * 
+ * 注意: Phase 1ではCreate/Update/Deleteは実装しません
  */
 
 const mysql = require("mysql2/promise");
@@ -27,10 +29,12 @@ async function getConnection() {
 /**
  * 今日のイベントを取得
  * @param {string} date - 日付（YYYY-MM-DD形式、省略時は今日）
- * @param {string} userId - ユーザーID（省略時は全ユーザー）
  * @returns {Promise<Array>} イベント配列
+ * 
+ * 処理: dateを'MM-DD'に変換してDBから取得
+ * 例: '2025-02-22' → '02-22' → 猫の日取得
  */
-async function getTodayEvents(date = null, userId = null) {
+async function getTodayEvents(date = null) {
   let connection;
   try {
     connection = await getConnection();
@@ -38,21 +42,20 @@ async function getTodayEvents(date = null, userId = null) {
     // 日付が指定されていない場合は今日の日付を使用
     const targetDate = date || new Date().toISOString().split('T')[0];
     
-    let query = `
+    // YYYY-MM-DD形式からMM-DD形式に変換
+    const dateParts = targetDate.split('-');
+    const monthDay = `${dateParts[1]}-${dateParts[2]}`;
+    
+    // 2025年を付与して検索（年は固定）
+    const fullDate = `2025-${monthDay}`;
+    
+    const query = `
       SELECT * FROM events 
-      WHERE date = ? AND is_enabled = TRUE
+      WHERE date = ? AND is_enabled = TRUE AND user_id = 'system'
+      ORDER BY event_type, id
     `;
-    const params = [targetDate];
     
-    // userIdが指定されている場合はフィルタ
-    if (userId) {
-      query += ` AND user_id = ?`;
-      params.push(userId);
-    }
-    
-    query += ` ORDER BY event_type, id`;
-    
-    const [rows] = await connection.execute(query, params);
+    const [rows] = await connection.execute(query, [fullDate]);
     await connection.end();
     
     return rows;
@@ -65,34 +68,28 @@ async function getTodayEvents(date = null, userId = null) {
 
 /**
  * タイプ別イベントを取得
- * @param {string} eventType - イベントタイプ（'fixed', 'today', 'personal'）
- * @param {string} date - 日付（YYYY-MM-DD形式、省略時は全期間）
- * @param {string} userId - ユーザーID（省略時は全ユーザー）
+ * @param {string} eventType - イベントタイプ（'fixed' または 'today'）
  * @returns {Promise<Array>} イベント配列
+ * 
+ * 処理: event_type別にsystemイベントを取得
  */
-async function getEventsByType(eventType, date = null, userId = null) {
+async function getEventsByType(eventType) {
   let connection;
   try {
+    // バリデーション
+    if (!['fixed', 'today'].includes(eventType)) {
+      throw new Error("eventTypeは 'fixed' または 'today' である必要があります");
+    }
+    
     connection = await getConnection();
     
-    let query = `SELECT * FROM events WHERE event_type = ? AND is_enabled = TRUE`;
-    const params = [eventType];
+    const query = `
+      SELECT * FROM events 
+      WHERE event_type = ? AND user_id = 'system' AND is_enabled = TRUE
+      ORDER BY date, id
+    `;
     
-    // 日付が指定されている場合はフィルタ
-    if (date) {
-      query += ` AND date = ?`;
-      params.push(date);
-    }
-    
-    // userIdが指定されている場合はフィルタ
-    if (userId) {
-      query += ` AND user_id = ?`;
-      params.push(userId);
-    }
-    
-    query += ` ORDER BY date, id`;
-    
-    const [rows] = await connection.execute(query, params);
+    const [rows] = await connection.execute(query, [eventType]);
     await connection.end();
     
     return rows;
@@ -104,165 +101,25 @@ async function getEventsByType(eventType, date = null, userId = null) {
 }
 
 /**
- * 全イベント一覧を取得
- * @param {string} userId - ユーザーID（省略時は全ユーザー）
- * @returns {Promise<Array>} イベント配列
- */
-async function getAllEvents(userId = null) {
-  let connection;
-  try {
-    connection = await getConnection();
-    
-    let query = `SELECT * FROM events WHERE 1=1`;
-    const params = [];
-    
-    // userIdが指定されている場合はフィルタ
-    if (userId) {
-      query += ` AND user_id = ?`;
-      params.push(userId);
-    }
-    
-    query += ` ORDER BY date, event_type, id`;
-    
-    const [rows] = await connection.execute(query, params);
-    await connection.end();
-    
-    return rows;
-  } catch (error) {
-    if (connection) await connection.end();
-    console.error("❌ イベント一覧取得エラー:", error);
-    throw error;
-  }
-}
-
-/**
- * イベントを作成
- * @param {Object} eventData - イベントデータ
- * @returns {Promise<Object>} 作成されたイベント
- */
-async function createEvent(eventData) {
-  let connection;
-  try {
-    const { user_id, event_type, title, date, description, is_enabled = true } = eventData;
-    
-    // 必須項目チェック
-    if (!user_id || !event_type || !title || !date) {
-      throw new Error("必須項目が不足しています: user_id, event_type, title, date");
-    }
-    
-    // event_typeのバリデーション
-    if (!['fixed', 'today', 'personal'].includes(event_type)) {
-      throw new Error("event_typeは 'fixed', 'today', 'personal' のいずれかである必要があります");
-    }
-    
-    connection = await getConnection();
-    
-    const query = `
-      INSERT INTO events (user_id, event_type, title, date, description, is_enabled)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    
-    const [result] = await connection.execute(query, [
-      user_id,
-      event_type,
-      title,
-      date,
-      description || null,
-      is_enabled
-    ]);
-    
-    // 作成されたイベントを取得
-    const [rows] = await connection.execute(
-      "SELECT * FROM events WHERE id = ?",
-      [result.insertId]
-    );
-    
-    await connection.end();
-    
-    return rows[0];
-  } catch (error) {
-    if (connection) await connection.end();
-    console.error("❌ イベント作成エラー:", error);
-    throw error;
-  }
-}
-
-/**
- * イベントを更新
- * @param {number} id - イベントID
- * @param {Object} eventData - 更新データ
- * @returns {Promise<Object>} 更新されたイベント
- */
-async function updateEvent(id, eventData) {
-  let connection;
-  try {
-    connection = await getConnection();
-    
-    // 既存イベントの存在確認
-    const [existing] = await connection.execute(
-      "SELECT * FROM events WHERE id = ?",
-      [id]
-    );
-    
-    if (existing.length === 0) {
-      throw new Error(`イベントが見つかりません: id=${id}`);
-    }
-    
-    // 更新可能なフィールド
-    const updatableFields = ['title', 'date', 'description', 'is_enabled'];
-    const updates = [];
-    const values = [];
-    
-    for (const field of updatableFields) {
-      if (eventData[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        values.push(eventData[field]);
-      }
-    }
-    
-    if (updates.length === 0) {
-      throw new Error("更新する項目がありません");
-    }
-    
-    values.push(id);
-    
-    const query = `UPDATE events SET ${updates.join(', ')} WHERE id = ?`;
-    await connection.execute(query, values);
-    
-    // 更新されたイベントを取得
-    const [rows] = await connection.execute(
-      "SELECT * FROM events WHERE id = ?",
-      [id]
-    );
-    
-    await connection.end();
-    
-    return rows[0];
-  } catch (error) {
-    if (connection) await connection.end();
-    console.error(`❌ イベント更新エラー (id=${id}):`, error);
-    throw error;
-  }
-}
-
-/**
  * イベントのON/OFFを切り替え
- * @param {number} id - イベントID
+ * @param {number} eventId - イベントID
  * @returns {Promise<Object>} 更新されたイベント
+ * 
+ * 処理: is_enabledをトグル（TRUE↔FALSE）
  */
-async function toggleEvent(id) {
+async function toggleEvent(eventId) {
   let connection;
   try {
     connection = await getConnection();
     
     // 現在の状態を取得
     const [rows] = await connection.execute(
-      "SELECT * FROM events WHERE id = ?",
-      [id]
+      "SELECT * FROM events WHERE id = ? AND user_id = 'system'",
+      [eventId]
     );
     
     if (rows.length === 0) {
-      throw new Error(`イベントが見つかりません: id=${id}`);
+      throw new Error(`イベントが見つかりません: id=${eventId}`);
     }
     
     const currentEnabled = rows[0].is_enabled;
@@ -270,14 +127,14 @@ async function toggleEvent(id) {
     
     // 状態を切り替え
     await connection.execute(
-      "UPDATE events SET is_enabled = ? WHERE id = ?",
-      [newEnabled, id]
+      "UPDATE events SET is_enabled = ? WHERE id = ? AND user_id = 'system'",
+      [newEnabled, eventId]
     );
     
     // 更新されたイベントを取得
     const [updated] = await connection.execute(
       "SELECT * FROM events WHERE id = ?",
-      [id]
+      [eventId]
     );
     
     await connection.end();
@@ -285,45 +142,7 @@ async function toggleEvent(id) {
     return updated[0];
   } catch (error) {
     if (connection) await connection.end();
-    console.error(`❌ イベントON/OFF切り替えエラー (id=${id}):`, error);
-    throw error;
-  }
-}
-
-/**
- * イベントを削除
- * @param {number} id - イベントID
- * @returns {Promise<boolean>} 削除成功フラグ
- */
-async function deleteEvent(id) {
-  let connection;
-  try {
-    connection = await getConnection();
-    
-    // 既存イベントの存在確認
-    const [existing] = await connection.execute(
-      "SELECT * FROM events WHERE id = ?",
-      [id]
-    );
-    
-    if (existing.length === 0) {
-      throw new Error(`イベントが見つかりません: id=${id}`);
-    }
-    
-    // システムイベント（user_id='system'）は削除不可
-    if (existing[0].user_id === 'system') {
-      throw new Error("システムイベントは削除できません");
-    }
-    
-    // イベントを削除
-    await connection.execute("DELETE FROM events WHERE id = ?", [id]);
-    
-    await connection.end();
-    
-    return true;
-  } catch (error) {
-    if (connection) await connection.end();
-    console.error(`❌ イベント削除エラー (id=${id}):`, error);
+    console.error(`❌ イベントON/OFF切り替えエラー (id=${eventId}):`, error);
     throw error;
   }
 }
@@ -331,10 +150,5 @@ async function deleteEvent(id) {
 module.exports = {
   getTodayEvents,
   getEventsByType,
-  getAllEvents,
-  createEvent,
-  updateEvent,
-  toggleEvent,
-  deleteEvent
+  toggleEvent
 };
-
