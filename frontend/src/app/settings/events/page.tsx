@@ -18,19 +18,22 @@ interface Event {
 }
 
 const EventsPage = () => {
-  const [activeTab, setActiveTab] = useState<'fixed' | 'today'>('fixed')
+  const [activeTab, setActiveTab] = useState<'fixed' | 'today' | 'personal'>('fixed')
   const [fixedEvents, setFixedEvents] = useState<Event[]>([])
   const [todayEvents, setTodayEvents] = useState<Event[]>([])
+  const [personalEvents, setPersonalEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set())
 
   // イベント一覧を取得
-  const fetchEvents = async (type: 'fixed' | 'today') => {
+  const fetchEvents = async (type: 'fixed' | 'today' | 'personal') => {
     try {
       setLoading(true)
       setError(null)
-      const response = await eventsAPI.getEvents(type)
+      const response = type === 'personal' 
+        ? await eventsAPI.getEvents(type, 'demo')
+        : await eventsAPI.getEvents(type)
       
       if (response.success && response.data) {
         // 日付順にソート
@@ -42,6 +45,8 @@ const EventsPage = () => {
         
         if (type === 'fixed') {
           setFixedEvents(sortedEvents)
+        } else if (type === 'personal') {
+          setPersonalEvents(sortedEvents)
         } else {
           setTodayEvents(sortedEvents)
         }
@@ -60,6 +65,7 @@ const EventsPage = () => {
   useEffect(() => {
     fetchEvents('fixed')
     fetchEvents('today')
+    fetchEvents('personal')
   }, [])
 
   // タブ切り替え時に再取得（必要に応じて）
@@ -68,6 +74,8 @@ const EventsPage = () => {
       fetchEvents('fixed')
     } else if (activeTab === 'today' && todayEvents.length === 0 && !loading) {
       fetchEvents('today')
+    } else if (activeTab === 'personal' && personalEvents.length === 0 && !loading) {
+      fetchEvents('personal')
     }
   }, [activeTab])
 
@@ -86,8 +94,10 @@ const EventsPage = () => {
         
         if (activeTab === 'fixed') {
           setFixedEvents(updateEvent(fixedEvents))
-        } else {
+        } else if (activeTab === 'today') {
           setTodayEvents(updateEvent(todayEvents))
+        } else {
+          setPersonalEvents(updateEvent(personalEvents))
         }
       } else {
         throw new Error(response.error || 'イベントの切り替えに失敗しました')
@@ -113,8 +123,8 @@ const EventsPage = () => {
   }
 
   // 現在のイベントリスト
-  const currentEvents = activeTab === 'fixed' ? fixedEvents : todayEvents
-  const eventTypeLabel = activeTab === 'fixed' ? '鉄板イベント' : '今日は何の日'
+  const currentEvents = activeTab === 'fixed' ? fixedEvents : activeTab === 'today' ? todayEvents : personalEvents
+  const eventTypeLabel = activeTab === 'fixed' ? '鉄板イベント' : activeTab === 'today' ? '今日は何の日' : '独自イベント'
 
   return (
     <Layout>
@@ -160,6 +170,18 @@ const EventsPage = () => {
               `}
             >
               今日は何の日 ({todayEvents.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('personal')}
+              className={`
+                py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'personal'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              独自イベント ({personalEvents.length})
             </button>
           </nav>
         </div>
