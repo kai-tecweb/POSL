@@ -12,6 +12,12 @@ const cron = require("node-cron");
 const app = express();
 app.use(express.json());
 
+// ============================================================
+// V1.1 Phase 1: イベントAPIルート
+// ============================================================
+const eventRoutes = require("./backend/routes/eventRoutes");
+app.use("/api/events", eventRoutes);
+
 // ============================================
 // node-cron スケジューラー管理（根本的な解決策）
 // ============================================
