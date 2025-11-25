@@ -854,10 +854,12 @@ async function getPersonaProfile(connection, userId) {
 // 最近の日記取得ヘルパー関数
 async function getRecentDiaries(connection, userId, limit = 3) {
   try {
-    const [rows] = await connection.execute(
-      "SELECT diary_data, content FROM diaries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-      [userId, parseInt(limit)]
-    );
+  // LIMIT句はプレースホルダーではなく直接埋め込み（MySQLの制限）
+  const safeLimit = Math.max(1, Math.min(parseInt(limit) || 3, 10)); // 1-10の範囲で制限
+  const [rows] = await connection.execute(
+    `SELECT diary_data, content FROM diaries WHERE user_id = ? ORDER BY created_at DESC LIMIT ${safeLimit}`,
+    [userId]
+  );
     return rows.map(row => {
       const diaryData = typeof row.diary_data === 'string'
         ? JSON.parse(row.diary_data)
