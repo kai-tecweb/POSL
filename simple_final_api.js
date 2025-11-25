@@ -1090,10 +1090,10 @@ async function generatePromptWithSettings(connection, userId) {
   // 今日の曜日テーマ
   const todayTheme = getTodayWeekTheme(weekThemeSettings);
 
-  // 商品情報を取得（毎日）
+  // 商品情報を取得（毎日、水曜日は特に強調）
   let product = null;
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=日曜日, 1=月曜日, ...
+  const dayOfWeek = today.getDay(); // 0=日曜日, 1=月曜日, 2=火曜日, 3=水曜日, ...
   
   try {
     const [productRows] = await connection.execute(
@@ -1229,12 +1229,12 @@ async function generatePromptWithSettings(connection, userId) {
 `;
   }
 
-  // 商品情報を反映（毎日、月曜日は特に強調）
+  // 商品情報を反映（毎日、水曜日は特に強調）
   if (product) {
-    if (dayOfWeek === 1) {
-      // 月曜日: 宣伝色を強く
+    if (dayOfWeek === 3) {
+      // 水曜日: 商品紹介デー（宣伝色を強く）
       userPrompt += `
-# 商品宣伝デー（月曜日）
+# 商品紹介デー（水曜日）
 今日は「${product.name}」について投稿してください。
 
 【商品情報】
