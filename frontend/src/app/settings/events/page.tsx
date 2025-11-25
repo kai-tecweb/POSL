@@ -50,10 +50,25 @@ const EventsPage = () => {
     setFormErrors({})
   }
 
-  // 削除ハンドラ（Phase 3-4-5で本実装）
-  const handleDelete = (eventId: number) => {
-    console.log('Delete event:', eventId)
-    // TODO: Phase 3-4-5で本実装
+  // 削除処理
+  const handleDelete = async (eventId: number) => {
+    if (!confirm('このイベントを削除してもよろしいですか？')) {
+      return
+    }
+
+    try {
+      setError(null)
+      const response = await eventsAPI.deletePersonalEvent(eventId, 'demo')
+      
+      if (response.success) {
+        await fetchEvents('personal')
+      } else {
+        throw new Error(response.error || 'イベントの削除に失敗しました')
+      }
+    } catch (err: any) {
+      console.error('Failed to delete event:', err)
+      setError(err.message || 'イベントの削除に失敗しました')
+    }
   }
 
   // フォームバリデーション
