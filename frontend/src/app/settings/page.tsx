@@ -100,7 +100,7 @@ const SettingsPage = () => {
           {settingsCategories.map((category) => (
             <Link
               key={category.href}
-              href={category.href as any}
+              href={category.href}
               className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all duration-200 hover:border-primary-300"
             >
               <div className="flex items-start mb-4">

@@ -1,84 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useAppStore } from '@/store/appStore'
 import { Card, Button, Input } from '@/components'
 import Layout from '@/components/Layout'
 
 const PostSettings = () => {
-  const { postTime, savePostTime, loadPostTime, loading, error } = useAppStore()
-  const [formData, setFormData] = useState<typeof postTime | null>(null)
+  const { postTime, updatePostTime, loading, error } = useAppStore()
+  const [formData, setFormData] = useState(postTime)
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
 
-  // 初期化時にデータを読み込む（マウント時のみ実行）
-  useEffect(() => {
-    let isMounted = true
-    
-    const initialize = async () => {
-      try {
-        // データベースから設定を読み込む
-        await loadPostTime()
-        
-        // Zustandの更新を待つ（postTimeが更新されるまで待機）
-        let retryCount = 0
-        const maxRetries = 10
-        while (retryCount < maxRetries && isMounted) {
-          const currentPostTime = useAppStore.getState().postTime
-          // デフォルト値（20:00）でない場合は読み込み完了とみなす
-          if (currentPostTime && currentPostTime.time && currentPostTime.time !== '20:00') {
-            setFormData(currentPostTime)
-            setIsInitialized(true)
-            return
-          }
-          // まだデフォルト値の場合は少し待って再試行
-          await new Promise(resolve => setTimeout(resolve, 100))
-          retryCount++
-        }
-        
-        // タイムアウトした場合は現在の値を設定
-        if (isMounted) {
-          const currentPostTime = useAppStore.getState().postTime
-          setFormData(currentPostTime)
-          setIsInitialized(true)
-        }
-      } catch (err) {
-        console.warn('投稿時刻設定の読み込みに失敗しました:', err)
-        // エラーが発生しても現在のpostTimeで続行
-        if (isMounted) {
-          const currentPostTime = useAppStore.getState().postTime
-          setFormData(currentPostTime || { enabled: false, time: '20:00', timezone: 'Asia/Tokyo' })
-          setIsInitialized(true)
-        }
-      }
-    }
-    
-    initialize()
-    
-    return () => {
-      isMounted = false
-    }
-  }, [loadPostTime]) // loadPostTimeを依存配列に含める（ただし、Zustandの関数は安定しているはず）
-
-  // postTimeが更新されたらformDataも更新（初期化後のみ、かつデフォルト値でない場合）
-  useEffect(() => {
-    if (isInitialized && postTime && postTime.time && postTime.time !== '20:00') {
-      setFormData(postTime)
-    }
-  }, [postTime, isInitialized])
-
-  const handleSave = async () => {
-    try {
-      setTestResult(null)
-      await savePostTime(formData)
-      setTestResult('設定を保存しました')
-      setTimeout(() => setTestResult(null), 3000)
-    } catch (error) {
-      console.error('設定保存エラー:', error)
-      setTestResult('設定の保存に失敗しました。もう一度お試しください。')
-      setTimeout(() => setTestResult(null), 5000)
-    }
+  const handleSave = () => {
+    updatePostTime(formData)
+    setTestResult('設定を保存しました')
+    setTimeout(() => setTestResult(null), 3000)
   }
 
   const handleTestConnection = async () => {
@@ -102,20 +38,6 @@ const PostSettings = () => {
     { value: 'Europe/London', label: 'グリニッジ標準時 (GMT)' },
     { value: 'UTC', label: '協定世界時 (UTC)' }
   ]
-
-  // 初期化中はローディング表示
-  if (!isInitialized || !formData) {
-    return (
-      <Layout>
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-            <span className="ml-3 text-gray-600">設定を読み込んでいます...</span>
-          </div>
-        </div>
-      </Layout>
-    )
-  }
 
   return (
     <Layout>

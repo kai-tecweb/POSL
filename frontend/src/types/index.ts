@@ -98,7 +98,6 @@ export interface DiaryEntry {
   uploadedAt: string
   transcriptionStatus: 'pending' | 'processing' | 'completed' | 'failed'
   transcription?: string
-  content?: string // 転写されたテキスト内容
   duration?: number
   fileSize: number
 }
