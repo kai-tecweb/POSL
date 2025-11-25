@@ -1284,6 +1284,7 @@ ${personaProfile.summary}`;
   }
 
   // 直近の日記サマリを反映（2〜3個まで）
+  // 直近の日記サマリを反映（2〜3個まで）
   if (recentDiaries && recentDiaries.length > 0) {
     userPrompt += `# 直近の日記の要約
 `;
@@ -1292,24 +1293,24 @@ ${personaProfile.summary}`;
         const summary = diary.content.length > 250 
           ? diary.content.substring(0, 250) + '...'
           : diary.content;
-        userPrompt += `${index + 1}. ${summary}\n`;
+        
+        let diaryLine = `${index + 1}. ${summary}`;
+        
+        // mood/tagsを追加
+        if (diary.data) {
+          if (diary.data.mood) {
+            diaryLine += ` （気分: ${diary.data.mood}）`;
+          }
+          if (diary.data.tags && Array.isArray(diary.data.tags) && diary.data.tags.length > 0) {
+            diaryLine += ` （関心: ${diary.data.tags.join(', ')}）`;
+          }
+        }
+        
+        userPrompt += `${diaryLine}\n`;
       }
     });
     userPrompt += "\n";
   }
-
-  // トレンドワードを反映（プロンプト設計書の要件）
-  if (trends && trends.length > 0) {
-    userPrompt += `# トレンド情報
-今日のトレンドワード（参考）:
-`;
-    trends.forEach(t => {
-      userPrompt += `- ${t.keyword}\n`;
-    });
-    userPrompt += `\n${getTrendMixDescription(trendSettings)}\n\n`;
-  }
-
-  // テンプレート情報を反映（プロンプト設計書の要件）
   if (templateSettings && templateSettings.enabled_templates && templateSettings.enabled_templates.length > 0) {
     // 最近使用したテンプレートを避けるため、過去24時間の投稿から使用テンプレートを取得
     let recentlyUsedTemplates = [];
