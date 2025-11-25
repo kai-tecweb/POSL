@@ -6,7 +6,7 @@ import { TrendData, PostLog } from '@/types'
 import Layout from '@/components/Layout'
 
 const Dashboard = () => {
-  const { trends, postLogs, loading, fetchTrends, fetchPostLogs, error } = useAppStore()
+  const { trends, postLogs, loading, fetchTrends, fetchPostLogs, postTime, initialize, error } = useAppStore()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -15,6 +15,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (mounted) {
+      initialize()
       loadData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,7 +90,11 @@ const Dashboard = () => {
               </div>
               <div>
                 <h3 className="text-sm font-medium text-gray-500">次回投稿</h3>
-                <p className="text-lg font-bold text-gray-900">未設定</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {postTime.enabled && postTime.time 
+                    ? `今日 ${postTime.time}` 
+                    : '未設定'}
+                </p>
               </div>
             </div>
           </div>
