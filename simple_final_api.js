@@ -49,7 +49,7 @@ async function executeAutoPost() {
     connection = await getConnection();
     
     // プロンプト生成（設定を反映）
-    const { systemPrompt, userPrompt } = await generatePromptWithSettings(connection, userId);
+    const { systemPrompt, userPrompt, product } = await generatePromptWithSettings(connection, userId);
     
     // OpenAIで投稿文生成
     const openai = getOpenAIClient();
