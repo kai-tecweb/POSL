@@ -292,60 +292,6 @@ export const eventsAPI = {
       method: 'DELETE'
     })
   }
-  },
-
-  // 独自イベント一覧取得
-  async getPersonalEvents(userId: string = 'demo') {
-    console.log('Getting personal events', { userId })
-    return await apiRequest(`/api/events?type=personal&userId=${userId}`)
-  },
-
-  // 特定イベント取得
-  async getEvent(eventId: number, userId: string = 'demo') {
-    console.log('Getting event', { eventId, userId })
-    return await apiRequest(`/api/events/${eventId}?userId=${userId}`)
-  },
-
-  // 独自イベント作成
-  async createPersonalEvent(eventData: {
-    user_id: string
-    title: string
-    date: string
-    description?: string
-    is_enabled?: boolean
-  }) {
-    console.log('Creating personal event', eventData)
-    return await apiRequest('/api/events', {
-      method: 'POST',
-      body: JSON.stringify(eventData)
-    })
-  },
-
-  // 独自イベント更新
-  async updatePersonalEvent(
-    eventId: number,
-    eventData: {
-      title?: string
-      date?: string
-      description?: string
-      is_enabled?: boolean
-    },
-    userId: string = 'demo'
-  ) {
-    console.log('Updating personal event', { eventId, eventData, userId })
-    return await apiRequest(`/api/events/${eventId}?userId=${userId}`, {
-      method: 'PUT',
-      body: JSON.stringify(eventData)
-    })
-  },
-
-  // 独自イベント削除
-  async deletePersonalEvent(eventId: number, userId: string = 'demo') {
-    console.log('Deleting personal event', { eventId, userId })
-    return await apiRequest(`/api/events/${eventId}?userId=${userId}`, {
-      method: 'DELETE'
-    })
-  }
 }
 
 // API utility functions for products
