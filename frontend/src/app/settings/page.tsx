@@ -39,6 +39,17 @@ const SettingsPage = () => {
       color: 'bg-purple-100 text-purple-600'
     },
     {
+      name: '商品管理',
+      href: '/settings/products',
+      description: '商品情報の登録・編集・削除',
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      ),
+      color: 'bg-teal-100 text-teal-600'
+    },
+    {
       name: 'トレンド設定',
       href: '/settings/trends',
       description: 'Google TrendsとYahoo Trendsの設定',

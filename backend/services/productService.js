@@ -102,6 +102,11 @@ async function createProduct(productData) {
       throw new Error("必須項目が不足しています: user_id, name");
     }
     
+    // 短い説明の必須チェック
+    if (!short_description || short_description.trim() === '') {
+      throw new Error('短い説明は必須です');
+    }
+    
     connection = await getConnection();
     
     const query = `
@@ -154,6 +159,11 @@ async function updateProduct(productId, productData) {
     
     if (existing.length === 0) {
       throw new Error(`商品が見つかりません: id=${productId}`);
+    }
+    
+    // 短い説明の必須チェック（更新時）
+    if (productData.short_description !== undefined && (!productData.short_description || productData.short_description.trim() === '')) {
+      throw new Error('短い説明は必須です');
     }
     
     // 更新可能なフィールド

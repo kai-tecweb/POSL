@@ -238,6 +238,43 @@ export const eventsAPI = {
   }
 }
 
+// API utility functions for products
+export const productsAPI = {
+  async getProducts(userId?: string) {
+    console.log('Getting products', { userId })
+    const url = userId ? `/api/products?userId=${userId}` : '/api/products'
+    return await apiRequest(url)
+  },
+
+  async getProduct(productId: number) {
+    console.log('Getting product', { productId })
+    return await apiRequest(`/api/products/${productId}`)
+  },
+
+  async createProduct(productData: any) {
+    console.log('Creating product', productData)
+    return await apiRequest('/api/products', {
+      method: 'POST',
+      body: JSON.stringify(productData)
+    })
+  },
+
+  async updateProduct(productId: number, productData: any) {
+    console.log('Updating product', { productId, productData })
+    return await apiRequest(`/api/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(productData)
+    })
+  },
+
+  async deleteProduct(productId: number) {
+    console.log('Deleting product', { productId })
+    return await apiRequest(`/api/products/${productId}`, {
+      method: 'DELETE'
+    })
+  }
+}
+
 // 型定義
 export interface Post {
   id: number
