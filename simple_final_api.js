@@ -1072,6 +1072,24 @@ ${template.structure}
 文字数目安: ${template.length}`;
 }
 
+// ポジティブ度ラベル取得
+function getPositivityLabel(value) {
+  if (value === undefined || value === null) return '普通';
+  const normalizedValue = typeof value === 'number' ? value : parseInt(value);
+  if (normalizedValue >= 70) return 'やや前向き';
+  if (normalizedValue >= 50) return '普通';
+  return '控えめ';
+}
+
+// 感情表現ラベル取得
+function getEmotionalLabel(value) {
+  if (value === undefined || value === null) return '普通';
+  const normalizedValue = typeof value === 'number' ? value : parseInt(value);
+  if (normalizedValue >= 70) return '豊か';
+  if (normalizedValue >= 50) return '普通';
+  return '控えめ';
+}
+
 // トレンドの混ぜ方説明を生成
 function getTrendMixDescription(trendSettings) {
   if (!trendSettings) {
@@ -1162,240 +1180,127 @@ async function generatePromptWithSettings(connection, userId) {
     console.error("❌ 商品取得エラー:", error);
   }
 
-  // システムプロンプト構築（プロンプト設計書11-2に準拠）
-  let systemPrompt = `あなたは、ユーザー本人の「分身」としてX（旧Twitter）に投稿する日本語文章を作るAIです。
-
-▼基本方針
-- 読んだ人が少し前向きになるような内容にしてください。
-- 売り込み感や宣伝感を強く出しすぎないでください。
-- 専門用語はできるだけ少なくし、使う場合は短い補足説明を入れてください。
-- 毎回の投稿は1つのツイート内で完結させてください（連投前提の構成は禁止）。
-- **重要**: 毎回異なる視点や表現で投稿を作成してください。以前の投稿と同じテーマやキーワードを繰り返さないでください。
-
-▼文量・形式
-- 140文字前後を目安とし、最大でも280文字以内に収めてください。`;
-  
-  // 絵文字レベルを取得（toneSettingsの前に取得）
+  // 絵文字レベルを取得
   let emojiLevel = 0.3; // デフォルト値
   if (toneSettings && toneSettings.emoji_level !== undefined) {
     emojiLevel = toneSettings.emoji_level / 100;
   }
   
-  // 絵文字ルールを追加（プロンプト設計書に準拠）
+  // 絵文字ルールを生成
+  let emojiRule = '';
   if (emojiLevel === 0) {
-    systemPrompt += `\n- 絵文字は使わないでください。`;
+    emojiRule = '使わない';
   } else if (emojiLevel <= 0.4) {
-    systemPrompt += `\n- 絵文字は使っても1個までにしてください。`;
+    emojiRule = '1個まで';
   } else if (emojiLevel <= 0.7) {
-    systemPrompt += `\n- 絵文字は2個までにしてください。`;
+    emojiRule = '2個まで';
   } else {
-    systemPrompt += `\n- 絵文字は最大3個までにしてください。使いすぎないでください。`;
+    emojiRule = '最大3個まで';
   }
-  
-  systemPrompt += `\n- ハッシュタグやURLは今回のバージョンでは基本的に使わないでください。
 
-▼文体・口調
-- 「です・ます調」で統一してください。`;
-  
-  // トーン設定に基づく文体指示（プロンプト設計書11-2に準拠）
-  if (toneSettings) {
-    const politeness = toneSettings.politeness !== undefined ? toneSettings.politeness / 100 : 0.8;
-    const casualness = toneSettings.casualness !== undefined ? toneSettings.casualness / 100 : 0.4;
-    const positivity = toneSettings.positivity !== undefined ? toneSettings.positivity / 100 : 0.9;
-    
-    if (politeness >= 0.8) {
-      systemPrompt += `\n- やや丁寧だが、堅すぎない口調で書いてください。`;
-    } else if (politeness >= 0.5) {
-      systemPrompt += `\n- 適度に丁寧な口調で書いてください。`;
-    } else {
-      systemPrompt += `\n- カジュアルな口調で書いてください。`;
-    }
-    
-    if (casualness <= 0.3) {
-      systemPrompt += `\n- カジュアルさは控えめにし、大人の読者にも違和感がないトーンにしてください。`;
-    } else if (casualness <= 0.6) {
-      systemPrompt += `\n- ほどよくカジュアルなトーンにしてください。`;
-    } else {
-      systemPrompt += `\n- フレンドリーなトーンで書いてください。`;
-    }
-    
-    if (positivity >= 0.8) {
-      systemPrompt += `\n- 全体として前向きで、読んだ人がほっとするような雰囲気を目指してください。`;
-    } else if (positivity >= 0.5) {
-      systemPrompt += `\n- 適度にポジティブな表現を入れてください。`;
-    } else {
-      systemPrompt += `\n- 中立的な表現を心がけてください。`;
-    }
-
-    // humorous（ユーモア）の反映
-    if (toneSettings.humorous !== undefined) {
-      const humorous = toneSettings.humorous / 100;
-      if (humorous >= 0.7) {
-        systemPrompt += `\n- 軽いユーモアやジョークを適度に織り込んでください。ただし、品を保ってください。`;
-      } else if (humorous >= 0.4) {
-        systemPrompt += `\n- 時折、軽いユーモアを入れることができます。`;
-      } else {
-        systemPrompt += `\n- ユーモアは控えめにしてください。`;
-      }
-    }
-    
-    // intellectual（知的さ）の反映
-    if (toneSettings.intellectual !== undefined) {
-      const intellectual = toneSettings.intellectual / 100;
-      if (intellectual >= 0.7) {
-        systemPrompt += `\n- 知的で深みのある表現を心がけてください。専門的な内容にも触れても構いません。`;
-      } else if (intellectual >= 0.4) {
-        systemPrompt += `\n- 適度に知的な表現を入れてください。`;
-      } else {
-        systemPrompt += `\n- 平易でわかりやすい表現を優先してください。`;
-      }
-    }
-  }
-  
-  systemPrompt += `\n- 一人称は「私」を使ってください。
-
-▼NG事項
-- 暴力、差別、政治、宗教、誹謗中傷に関する内容は書かないでください。`;
-
-  // NGワードを追加
+  // NGワードテキストを生成
+  let ngWordsText = '';
   if (promptSettings && promptSettings.ng_words && promptSettings.ng_words.length > 0) {
-    systemPrompt += `\n- 次の単語は使わないでください: 「${promptSettings.ng_words.join('」「')}」。`;
+    ngWordsText = `- 次の単語は使わない: 「${promptSettings.ng_words.join('」「')}」\n`;
   }
-  
-  systemPrompt += `\n- 不安や恐怖を煽るような表現は避けてください。
 
-以上のルールを必ず守りながら、後続の指示（ユーザーメッセージ）に従って投稿文を1つだけ生成してください。`;
+  // システムプロンプト構築（改善版：短縮・優先順位明確化）
+  let systemPrompt = `あなたは、ユーザー本人の「分身」としてX（旧Twitter）に投稿する日本語文章を作るAIです。
 
-  // ユーザープロンプト構築（プロンプト設計書11-3に準拠）
+▼最重要ルール
+- 140文字前後（最大280文字）
+- 「です・ます調」で統一
+- 絵文字は${emojiRule}
+
+▼優先順位（上が最優先）
+1. 今日のテーマ（曜日テーマ）を軸にする
+2. 自然で読みやすい文章にする
+3. 商品・トレンドは「軽く触れる程度」でOK
+
+▼トーン
+- 丁寧だが堅すぎない
+- 前向きで、読んだ人がほっとする雰囲気
+- 同じ話題でも、切り口や表現を毎回変える
+
+▼NG
+- 政治、宗教、誹謗中傷
+- 不安を煽る表現
+- 情報を詰め込みすぎた長文
+${ngWordsText}
+投稿文を1つだけ出力してください。説明や補足は不要です。`;
+
+  // ユーザープロンプト構築（改善版：優先順位明確化、情報量削減）
   let userPrompt = "";
 
-  // 最近の投稿履歴を最初に反映（類似投稿を避けるため - 重要）
-  if (recentPosts && recentPosts.length > 0) {
-    const recentContents = recentPosts
-      .map(p => {
-        try {
-          const content = typeof p.content === 'string' ? JSON.parse(p.content) : p.content;
-          return typeof content === 'string' ? content : '';
-        } catch {
-          return '';
-        }
-      })
-      .filter(c => c && c.length > 0)
-      .slice(0, 10); // 最近10件を参照（24時間以内）
-    
-    if (recentContents.length > 0) {
-      userPrompt += `# 重要：投稿の多様性を確保
-以下の最近の投稿とは**完全に異なる内容・視点・表現・テーマ**で投稿を作成してください。
-同じテーマやキーワード、表現パターンを繰り返さないでください。
-以前の投稿とは異なる角度から、新しい話題や視点で投稿してください。
+  // テーマ説明を生成
+  const themeDescription = todayTheme ? 'このテーマを軸に、自然で読みやすい投稿を作成してください。' : '今日のテーマに沿って投稿を作成してください。';
 
-最近の投稿例:
-`;
-      recentContents.forEach((content, index) => {
-        const shortContent = content.length > 100 ? content.substring(0, 100) + '...' : content;
-        userPrompt += `${index + 1}. ${shortContent}\n`;
-      });
-      userPrompt += "\n";
-    }
-  }
-
-  // 今日の曜日テーマを反映
+  // 【最優先】今日のテーマ
   if (todayTheme) {
-    userPrompt += `# 今日の投稿テーマ（曜日テーマ）
-今日は「${todayTheme}」をテーマにした投稿を書いてください。
-ただし、上記の最近の投稿とは異なる視点や表現で、このテーマに沿った投稿を作成してください。
+    userPrompt += `# 【最優先】今日のテーマ
+テーマ: 「${todayTheme}」
+→ ${themeDescription}
 
 `;
   }
 
-  // 商品情報を反映（毎日、水曜日は特に強調）
-  // 1年前の今日の日記を取得
-  const oneYearAgoDiary = await getOneYearAgoDiary(connection, userId);
-  if (oneYearAgoDiary && oneYearAgoDiary.content) {
-    userPrompt += `# 1年前の今日の記録
-`;
-    const summary = oneYearAgoDiary.content.length > 100
-      ? oneYearAgoDiary.content.substring(0, 100) + '...'
-      : oneYearAgoDiary.content;
-    userPrompt += `${summary}\n\n`;
-  }
-
-  if (product) {
-    if (dayOfWeek === 3) {
-      // 水曜日: 商品紹介デー（宣伝色を強く）
-      userPrompt += `
-# 商品紹介デー（水曜日）
-今日は「${product.name}」について投稿してください。
-
-【商品情報】
-- 商品名: ${product.name}
-- 説明: ${product.short_description}
-${product.description ? `- 詳細: ${product.description}\n` : ''}${product.url ? `- URL: ${product.url}\n` : ''}
-【指示】
-- この商品を前面に出して、魅力を伝えてください
-- 具体的な使い方やメリットを提案してください
-- ただし、読者が前向きになれる内容にしてください
-
-`;
-    } else {
-      // 平日: 控えめに織り込む
-      userPrompt += `
-# 商品情報（参考）
-投稿の中で、以下の商品に自然に言及してください。
-
-- 商品名: ${product.name}
-- 説明: ${product.short_description}
-${product.url ? `- URL: ${product.url}\n` : ''}
-【注意】
-- 売り込み感を強く出しすぎないでください
-- さりげなく触れる程度で構いません
-- 曜日テーマとの自然な組み合わせを優先してください
-
-`;
-    }
-  }
-
-  // 人格プロファイルを反映
+  // 【参考】人格プロファイル
   if (personaProfile && personaProfile.summary) {
-    userPrompt += `# 人格プロファイル（要約）
-${personaProfile.summary}`;
-    if (personaProfile.data && personaProfile.data.interests) {
-      userPrompt += `\n- 興味・関心: ${personaProfile.data.interests.join(', ')}`;
-    }
-    if (personaProfile.data && personaProfile.data.values) {
-      userPrompt += `\n- 価値観: ${personaProfile.data.values.join(', ')}`;
-    }
-    userPrompt += "\n\n";
+    const interests = personaProfile.data && personaProfile.data.interests 
+      ? personaProfile.data.interests.join(', ') 
+      : '未設定';
+    const values = personaProfile.data && personaProfile.data.values 
+      ? personaProfile.data.values.join(', ') 
+      : '未設定';
+    
+    userPrompt += `# 【参考】あなたのプロフィール
+- 興味: ${interests}
+- 価値観: ${values}
+
+`;
   }
 
-  // 直近の日記サマリを反映（2〜3個まで）
-  // 直近の日記サマリを反映（2〜3個まで）
+  // 【参考】最近の出来事（日記）
   if (recentDiaries && recentDiaries.length > 0) {
-    userPrompt += `# 直近の日記の要約
+    userPrompt += `# 【参考】最近の出来事
 `;
-    recentDiaries.slice(0, 3).forEach((diary, index) => {
+    recentDiaries.slice(0, 3).forEach((diary, i) => {
       if (diary.content) {
-        const summary = diary.content.length > 250 
-          ? diary.content.substring(0, 250) + '...'
-          : diary.content;
-        
-        let diaryLine = `${index + 1}. ${summary}`;
-        
-        // mood/tagsを追加
-        if (diary.data) {
-          if (diary.data.mood) {
-            diaryLine += ` （気分: ${diary.data.mood}）`;
-          }
-          if (diary.data.tags && Array.isArray(diary.data.tags) && diary.data.tags.length > 0) {
-            diaryLine += ` （関心: ${diary.data.tags.join(', ')}）`;
-          }
-        }
-        
-        userPrompt += `${diaryLine}\n`;
+        const summary = diary.content.length > 50 ? diary.content.substring(0, 50) + '...' : diary.content;
+        userPrompt += `- ${summary}\n`;
       }
     });
-    userPrompt += "\n";
+    userPrompt += `\n`;
   }
+
+  // 【軽く触れる程度】商品情報
+  if (product) {
+    const isWednesday = dayOfWeek === 3;
+    const productDesc = product.short_description || (product.description ? product.description.substring(0, 30) : '') || '';
+    
+    userPrompt += `# 【軽く触れる程度】商品情報
+- ${product.name}: ${productDesc}
+${isWednesday ? '※水曜日なので少し積極的に触れてもOK' : '※無理に入れなくてOK'}
+
+`;
+  }
+
+  // 【軽く触れる程度】今のトレンド（新規追加）
+  if (trends && trends.length > 0) {
+    userPrompt += `# 【軽く触れる程度】今のトレンド
+`;
+    trends.slice(0, 3).forEach(trend => {
+      userPrompt += `- ${trend.keyword}\n`;
+    });
+    userPrompt += `※無理に入れなくてOK。自然に触れられそうなら。
+
+`;
+  }
+
+  // 【文章の型】テンプレート
+  let templateName = 'デフォルト';
+  let templateDescription = '基本的な3文構成（挨拶・本題・締め）';
+  
   if (templateSettings && templateSettings.enabled_templates && templateSettings.enabled_templates.length > 0) {
     // 最近使用したテンプレートを避けるため、過去24時間の投稿から使用テンプレートを取得
     let recentlyUsedTemplates = [];
@@ -1423,125 +1328,62 @@ ${personaProfile.summary}`;
     );
     const templatesToChooseFrom = availableTemplates.length > 0 
       ? availableTemplates 
-      : templateSettings.enabled_templates; // すべて使用済みの場合は全テンプレートから選択
+      : templateSettings.enabled_templates;
     
     const randomIndex = Math.floor(Math.random() * templatesToChooseFrom.length);
     const selectedTemplateId = templatesToChooseFrom[randomIndex];
     const templateDesc = getTemplateDescription(selectedTemplateId);
     
     if (templateDesc) {
-      userPrompt += `# 使用するテンプレ（文章の型）
-${templateDesc}
-
-`;
+      // テンプレート名を抽出
+      const nameMatch = templateDesc.match(/（(.+?)）/);
+      if (nameMatch) {
+        templateName = nameMatch[1];
+      }
+      templateDescription = templateDesc;
     }
   }
 
-  // イベント情報を反映
+  userPrompt += `# 【文章の型】
+今回は「${templateName}」スタイルで。
+${templateDescription}
+
+`;
+
+  // 【トーン調整】
+  userPrompt += `# 【トーン調整】
+`;
+  if (toneSettings) {
+    const positivity = toneSettings.positivity !== undefined ? toneSettings.positivity : 70;
+    const emotional = toneSettings.emotional !== undefined ? toneSettings.emotional : 50;
+    
+    userPrompt += `- ポジティブ度: ${getPositivityLabel(positivity)}
+- 感情表現: ${getEmotionalLabel(emotional)}
+- 絵文字: ${emojiRule}
+
+`;
+  } else {
+    userPrompt += `- ポジティブ度: 普通
+- 感情表現: 普通
+- 絵文字: ${emojiRule}
+
+`;
+  }
+
+  // イベント情報（あれば）
   const todaysEvents = getTodaysEvents(eventSettings);
   if (todaysEvents && todaysEvents.length > 0) {
-    userPrompt += `# イベント情報
+    userPrompt += `# 【イベント】
 `;
     todaysEvents.forEach(event => {
       userPrompt += `今日は「${event.name}」です。${event.description || ''}\n`;
     });
-    userPrompt += "\n";
+    userPrompt += `\n`;
   }
 
-  // 文体・トーン（プロンプト設計書11-3に準拠）
-  userPrompt += `# 文体・トーン
-`;
-  if (toneSettings) {
-    const politeness = toneSettings.politeness !== undefined ? toneSettings.politeness / 100 : 0.8;
-    const positivity = toneSettings.positivity !== undefined ? toneSettings.positivity / 100 : 0.9;
-    const emotional = toneSettings.emotional !== undefined ? toneSettings.emotional / 100 : 0.7;
-    const creativity = toneSettings.creativity !== undefined ? toneSettings.creativity / 100 : 0.5;
-    
-    userPrompt += `- 丁寧でやさしい「です・ます調」。\n`;
-    
-    if (positivity >= 0.8) {
-      userPrompt += `- ポジティブ度は高め。\n`;
-    } else if (positivity >= 0.5) {
-      userPrompt += `- ポジティブ度は中程度。\n`;
-    } else {
-      userPrompt += `- ポジティブ度は控えめ。\n`;
-    }
-    
-    if (emotional >= 0.7) {
-      userPrompt += `- 感情は少し込めてよいが、重くならないように。\n`;
-    } else if (emotional >= 0.4) {
-      userPrompt += `- 感情表現は控えめに。\n`;
-    } else {
-      userPrompt += `- 感情表現は最小限に。\n`;
-    }
-    
-    if (creativity >= 0.7) {
-      userPrompt += `- 比喩はあっても良いが、使うなら1つまで。\n`;
-    } else if (creativity >= 0.4) {
-      userPrompt += `- 比喩は控えめに使用。\n`;
-    } else {
-      userPrompt += `- 比喩は使わない。\n`;
-    }
-    
-    if (emojiLevel > 0 && emojiLevel <= 0.4) {
-      userPrompt += `- 絵文字は使うとしても1個までにしてください。\n`;
-    } else if (emojiLevel <= 0.7) {
-      userPrompt += `- 絵文字は2個までにしてください。\n`;
-    } else if (emojiLevel > 0.7) {
-      userPrompt += `- 絵文字は最大3個までにしてください。\n`;
-    }
-  }
-  userPrompt += "\n";
-
-  // プロンプト微調整（プロンプト設計書11-3に準拠）
-  if (promptSettings) {
-    userPrompt += `# プロンプト微調整
-`;
-    
-    if (promptSettings.additional_rules && promptSettings.additional_rules.length > 0) {
-      userPrompt += `追加ルール:
-`;
-      promptSettings.additional_rules.forEach(rule => {
-        userPrompt += `- ${rule}\n`;
-      });
-      userPrompt += "\n";
-    }
-    
-    if (promptSettings.ng_words && promptSettings.ng_words.length > 0) {
-      userPrompt += `NGワード:
-`;
-      promptSettings.ng_words.forEach(word => {
-        userPrompt += `- ${word}\n`;
-      });
-      userPrompt += "\n";
-    }
-    
-    if (promptSettings.preferred_phrases && promptSettings.preferred_phrases.length > 0) {
-      userPrompt += `よく使ってほしい表現:
-`;
-      promptSettings.preferred_phrases.forEach(phrase => {
-        userPrompt += `- 「${phrase}」\n`;
-      });
-      userPrompt += "\n";
-    }
-    
-    // creativity_levelに応じた指示
-    if (promptSettings.creativity_level !== undefined) {
-      const creativity = promptSettings.creativity_level / 100;
-      if (creativity <= 0.3) {
-        userPrompt += `創造性レベル: テンプレとルールに忠実に、変化少なめで作成してください。ただし、以前の投稿とは異なる内容にしてください。\n\n`;
-      } else if (creativity <= 0.7) {
-        userPrompt += `創造性レベル: ルール守りつつ、言い回しなどは柔軟に作成してください。以前の投稿とは異なる視点や表現を使ってください。\n\n`;
-      } else {
-        userPrompt += `創造性レベル: ルールをベースにしつつ、比喩や展開に自由度を持たせて作成してください。以前の投稿とは完全に異なる創造的な内容にしてください。\n\n`;
-      }
-    }
-  }
-
-  userPrompt += `# 出力フォーマット
-- Xにそのまま投稿できる本文だけを出力してください。
-- 前後に説明文やラベルはつけず、日本語の文章1本のみを出力してください。
-- **重要**: 以前の投稿とは完全に異なる内容・視点・表現で投稿を作成してください。`;
+  // 出力指示
+  userPrompt += `# 出力
+Xにそのまま投稿できる本文のみ。`;
 
   return { systemPrompt, userPrompt, product };
 }
